@@ -626,7 +626,10 @@ function renderTaskRows(){
 function deleteTask(id){
   if(!confirm('Delete this task permanently?'))return;
   tasks=tasks.filter(t=>t.id!==id);
-  saveTasks(); renderTaskRows(); refreshOverdueBadge();
+  saveTasks(); refreshOverdueBadge();
+  // Close drawer if it was showing the deleted task
+  if(activeDrawerTask&&activeDrawerTask.id===id) closeDrawer();
+  else renderTaskRows();
   toast('Task deleted','var(--red)');
 }
 
@@ -1254,6 +1257,8 @@ function userLogin(){
 }
 
 function renderUserDashboard(c){
+  // Reset userTask when returning to dashboard to prevent stale references
+  userTask=null;
   const myTasks=tasks.filter(t=>t.assignee.toLowerCase()===userEmail.toLowerCase());
   const done=myTasks.filter(t=>t.status==='Done').length;
   const inprog=myTasks.filter(t=>t.status==='In Progress').length;
@@ -1361,6 +1366,23 @@ POLYPLASTICS Task Manager`
 }
 
 function renderUserTask(c){
+  // Always re-read from the live tasks array so deleted/edited tasks are reflected immediately
+  if(userTask){
+    const fresh=tasks.find(x=>x.id===userTask.id);
+    if(!fresh){
+      // Task was deleted by admin — show a friendly message instead of stale data
+      userTask=null;
+      c.innerHTML=`
+      <div class="fade-in" style="max-width:520px;margin:60px auto;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🗑</div>
+        <div class="panel-title" style="margin-bottom:8px">Task Removed</div>
+        <div style="color:var(--text3);font-size:14px;margin-bottom:24px">This task has been removed by the admin. Please check your task list for current assignments.</div>
+        <button class="btn btn-primary" onclick="renderUserDashboard(document.getElementById('content'))">← Back to My Tasks</button>
+      </div>`;
+      return;
+    }
+    userTask=fresh; // always use the freshest version
+  }
   const t=userTask;
   const overdue=isOverdue(t);
   c.innerHTML=`
@@ -1437,7 +1459,15 @@ function renderUserTask(c){
 
 function userUpdateStatus(s){
   if(!userTask)return;
-  userTask={...userTask,status:s};
+  // Re-read fresh from tasks array in case admin changed it
+  const fresh=tasks.find(x=>x.id===userTask.id);
+  if(!fresh){
+    toast('This task was removed by the admin','var(--red)');
+    userTask=null;
+    renderUserDashboard(document.getElementById('content'));
+    return;
+  }
+  userTask={...fresh,status:s};
   updateTask(userTask);
   toast('Status updated to: '+s);
   renderUserTask(document.getElementById('content'));
@@ -1462,6 +1492,14 @@ function removePendingFile(i){
 function submitUserReply(){
   const text=document.getElementById('user-reply-text').value.trim();
   if(!text&&pendingFiles.length===0){toast('Please write a reply or attach a file','var(--amber)');return;}
+  // Re-read fresh from tasks array in case admin edited or deleted it
+  const fresh=tasks.find(x=>x.id===userTask.id);
+  if(!fresh){
+    toast('This task was removed by the admin','var(--red)');
+    userTask=null;
+    renderUserDashboard(document.getElementById('content'));
+    return;
+  }
   const reply={
     id:uid(),
     author:userTask.assignee,
@@ -1469,7 +1507,7 @@ function submitUserReply(){
     time:new Date().toISOString(),
     attachments:pendingFiles.map(f=>({name:f.name,size:f.size,type:f.type}))
   };
-  userTask={...userTask,replies:[...userTask.replies,reply]};
+  userTask={...fresh,replies:[...fresh.replies,reply]};
   updateTask(userTask);
   pendingFiles=[];
   toast('Reply submitted successfully!');
@@ -1480,7 +1518,9 @@ function submitUserReply(){
 //  TASK DRAWER (detail panel)
 // ═══════════════════════════════════════════════════════════════════════
 function openDrawer(id){
-  activeDrawerTask=getTask(id);
+  const fresh=getTask(id);
+  if(!fresh){toast('Task not found or was deleted','var(--red)');return;}
+  activeDrawerTask=fresh;
   const overlay=document.createElement('div');
   overlay.className='drawer-overlay'; overlay.id='drawer-overlay';
   overlay.onclick=closeDrawer;
@@ -1496,14 +1536,34 @@ function closeDrawer(){
   document.getElementById('task-drawer')?.remove();
   activeDrawerTask=null;
   pendingFiles=[];
-  // Safely refresh current panel
-  const taskRows=document.getElementById('task-rows');
-  if(currentPanel==='tasks'&&taskRows) renderTaskRows();
-  else if(currentPanel==='kanban') renderKanban();
-  else if(currentPanel==='dashboard') renderDashboard();
+  // Refresh the current view so any deletions/edits made in the drawer are reflected
+  if(mode==='user'){
+    // In user mode, refresh the user dashboard (tasks list) or task detail
+    const c=document.getElementById('content');
+    if(userTask){
+      const fresh=tasks.find(t=>t.id===userTask.id);
+      if(fresh) renderUserTask(c);
+      else renderUserDashboard(c);
+    } else {
+      renderUserDashboard(c);
+    }
+  } else {
+    // Admin mode — refresh the current panel
+    const taskRows=document.getElementById('task-rows');
+    if(currentPanel==='tasks'&&taskRows) renderTaskRows();
+    else if(currentPanel==='kanban') renderKanban();
+    else if(currentPanel==='dashboard') renderDashboard();
+    else if(currentPanel==='mytasks') renderMyTasks();
+  }
 }
 
 function renderDrawerContent(){
+  // Always re-read from tasks[] to guarantee the drawer shows current data
+  if(activeDrawerTask){
+    const fresh=getTask(activeDrawerTask.id);
+    if(!fresh){ closeDrawer(); return; } // task was deleted
+    activeDrawerTask=fresh;
+  }
   const t=activeDrawerTask;
   const drawer=document.getElementById('task-drawer');
   if(!drawer)return;
@@ -1613,12 +1673,21 @@ function deleteTaskFromDrawer(id){
   saveTasks(); refreshOverdueBadge();
   closeDrawer();
   toast('Task deleted','var(--red)');
-  showPanel(currentPanel);
+  // If user mode is active and they were viewing this task, reset to dashboard
+  if(mode==='user'&&userTask&&userTask.id===id){
+    userTask=null;
+    renderUserDashboard(document.getElementById('content'));
+  } else {
+    showPanel(currentPanel);
+  }
 }
 
 function changeDrawerStatus(s){
   const prev=activeDrawerTask.status;
-  activeDrawerTask={...activeDrawerTask,status:s};
+  // Re-read fresh copy before writing to avoid overwriting concurrent changes
+  const fresh=getTask(activeDrawerTask.id);
+  if(!fresh){ toast('Task no longer exists','var(--red)'); closeDrawer(); return; }
+  activeDrawerTask={...fresh,status:s};
   updateTask(activeDrawerTask);
   renderDrawerContent();
   refreshOverdueBadge();
@@ -1635,8 +1704,10 @@ function handleDrawerFiles(input){
 function submitDrawerReply(){
   const text=document.getElementById('drawer-reply-text').value.trim();
   if(!text&&pendingFiles.length===0){toast('Please write a reply or attach a file','var(--amber)');return;}
+  const fresh=getTask(activeDrawerTask.id);
+  if(!fresh){ toast('Task no longer exists','var(--red)'); closeDrawer(); return; }
   const reply={id:uid(),author:'Admin',text,time:new Date().toISOString(),attachments:pendingFiles.map(f=>({name:f.name,size:f.size}))};
-  activeDrawerTask={...activeDrawerTask,replies:[...activeDrawerTask.replies,reply]};
+  activeDrawerTask={...fresh,replies:[...fresh.replies,reply]};
   updateTask(activeDrawerTask);
   pendingFiles=[];
   toast('Reply sent!');
@@ -1799,10 +1870,15 @@ function checkUrlToken(){
     try{
       const payload=JSON.parse(decodeURIComponent(escape(atob(dataParam))));
       if(payload&&payload.email&&Array.isArray(payload.tasks)){
-        // Merge: update matching tasks, append new ones
+        // Merge strategy: update existing tasks from payload, but NEVER re-insert
+        // tasks that have been deleted from the admin's localStorage (the source of truth).
+        // We only update tasks whose IDs already exist in the current tasks array.
         const existingIds=new Set(tasks.map(t=>t.id));
         const incoming=payload.tasks;
+        // Update tasks that exist locally with newer data from payload
         const updatedTasks=tasks.map(t=>{ const m=incoming.find(x=>x.id===t.id); return m||t; });
+        // Only add incoming tasks that do NOT exist locally at all
+        // (never re-add a task that was deleted — if it was in existingIds it stays deleted)
         incoming.forEach(t=>{ if(!existingIds.has(t.id)) updatedTasks.push(t); });
         tasks=updatedTasks;
         saveTasks();
@@ -1822,7 +1898,8 @@ function checkUrlToken(){
   // ?token= deep-link — specific task by token
   if(token){
     const found=tasks.find(t=>t.token===token)||tasks.find(t=>t.token&&t.token.toLowerCase()===token.toLowerCase());
-    if(found){ userEmail=found.assignee; userTask=found; mode='user'; return; }
+    // Store only the id so renderUserTask always re-fetches a fresh copy
+    if(found){ userEmail=found.assignee; userTask={id:found.id}; mode='user'; return; }
   }
 }
 
@@ -1954,6 +2031,8 @@ function quickStatusCycle(id){
 function deleteMyTask(id){
   if(!confirm('Delete this task?')) return;
   tasks=tasks.filter(t=>t.id!==id); saveTasks();
+  // Close drawer if it was showing the deleted task
+  if(activeDrawerTask&&activeDrawerTask.id===id) closeDrawer();
   const se=mode==='user'?(userEmail||''):(localStorage.getItem('self_email')||'');
   renderMyTaskList(se); refreshOverdueBadge(); toast('Deleted');
 }
