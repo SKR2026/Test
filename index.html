@@ -1194,7 +1194,7 @@ const App = () => {
               setFilterGuestHouse={setFilterGuestHouse}
               filterCategory={filterCategory}
               setFilterCategory={setFilterCategory}
-              plants={plants}
+              plants={plants.filter(p => accessibleGuestHouses.some(gh => gh.plant === p))}
               applyFilters={applyFilters}
               handleExport={handleExport}
               handleExportGuestList={handleExportGuestList}
