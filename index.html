@@ -1048,7 +1048,8 @@ const App = () => {
     return <LoginScreen onLogin={handleLogin} darkMode={darkMode} setThemeMode={setThemeMode} />;
   }
 
-  const { guestHouses: accessibleGuestHouses, expenses: accessibleExpenses } = getAccessibleData();
+  const { guestHouses: accessibleGuestHousesRaw, expenses: accessibleExpenses } = getAccessibleData();
+  const accessibleGuestHouses = accessibleGuestHousesRaw.filter(gh => gh.name && gh.name.trim() !== '');
   const stats = calculateStats(accessibleExpenses);
 
   return (
@@ -1135,7 +1136,7 @@ const App = () => {
               currentUser={currentUser}
               stats={stats}
               expenses={accessibleExpenses}
-              guestHouses={accessibleGuestHouses.filter(gh => gh.name && gh.name.trim() !== '')}
+              guestHouses={accessibleGuestHouses}
               darkMode={darkMode}
               filterPlant={filterPlant}
               setFilterPlant={setFilterPlant}
