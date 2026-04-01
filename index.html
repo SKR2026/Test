@@ -1052,8 +1052,23 @@ function adminLogin(){
   document.getElementById('admin-nav').style.display = 'block';
   const sidebarBottom = document.querySelector('.sidebar-bottom');
   if(sidebarBottom) sidebarBottom.style.display = '';
-  toast('Welcome back, Admin! 👋');
-  showPanel('dashboard');
+  const _syncNotice = sessionStorage.getItem('pending_sync_notice');
+  if(_syncNotice){
+    sessionStorage.removeItem('pending_sync_notice');
+    toast('✅ Assignee reply synced — dashboard updated!','var(--green)');
+    showPanel('tasks');
+    setTimeout(()=>{
+      const banner=document.createElement('div');
+      banner.style.cssText='background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);border-radius:10px;padding:12px 18px;margin-bottom:16px;font-size:13px;color:var(--green);display:flex;align-items:center;gap:10px;';
+      banner.innerHTML='<span style="font-size:18px">💬</span><span><strong>Assignee reply synced!</strong> The reply is now visible in the task\'s reply thread. Click any task to view it.</span>';
+      const content=document.getElementById('content');
+      if(content&&content.firstChild) content.insertBefore(banner,content.firstChild);
+      setTimeout(()=>banner.remove(),7000);
+    },300);
+  } else {
+    toast('Welcome back, Admin! 👋');
+    showPanel('dashboard');
+  }
 }
 
 // ── Logout ────────────────────────────────────────────────────────────
@@ -1512,6 +1527,76 @@ function submitUserReply(){
   pendingFiles=[];
   toast('Reply submitted successfully!');
   renderUserTask(document.getElementById('content'));
+  // ── Show admin sync link so the reply reaches the admin dashboard ──
+  showReplySyncModal(userTask);
+}
+
+function buildAdminSyncLink(task){
+  // Encode the single updated task so the admin can open this link to sync the reply
+  const base=window.location.href.split('?')[0];
+  try{
+    const payload={syncTask:task};
+    const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    return base+'?adminsync='+encoded;
+  }catch(e){ return null; }
+}
+
+function showReplySyncModal(task){
+  // Remove any existing sync modal
+  document.getElementById('reply-sync-modal')?.remove();
+  const syncUrl=buildAdminSyncLink(task);
+  if(!syncUrl) return;
+  const html=`
+  <div id="reply-sync-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)">
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:520px;padding:28px;animation:slideUp .2s ease">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="font-size:26px">✅</span>
+        <div style="font-family:var(--font-head);font-weight:700;font-size:18px;color:var(--text)">Reply Sent!</div>
+      </div>
+      <div style="color:var(--text3);font-size:13px;margin-bottom:18px;line-height:1.7">
+        Your reply has been saved. Because this app stores data locally in each browser, <strong style="color:var(--amber)">the admin won't automatically see your reply</strong> until you share the sync link below.<br><br>
+        <strong style="color:var(--text)">Copy this link and send it to your admin</strong> (via email, WhatsApp, etc.). When they open it, your reply will instantly appear in the admin dashboard.
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border2);border-radius:9px;padding:10px 13px;font-family:monospace;font-size:11px;color:var(--accent);word-break:break-all;margin-bottom:14px;max-height:60px;overflow:hidden;text-overflow:ellipsis">${syncUrl}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="
+          if(navigator.clipboard&&navigator.clipboard.writeText){
+            navigator.clipboard.writeText('${syncUrl.replace(/'/g,"\\'")}').then(()=>{ document.getElementById('reply-copy-status').textContent='✅ Copied!'; document.getElementById('reply-copy-status').style.color='var(--green)'; }).catch(()=>{ prompt('Copy this sync link:','${syncUrl.replace(/'/g,"\\'")}'); });
+          } else { prompt('Copy this sync link:','${syncUrl.replace(/'/g,"\\'")}'); }
+        ">📋 Copy Sync Link</button>
+        <div id="reply-copy-status" style="font-size:13px;font-weight:600;align-self:center"></div>
+        <button class="btn btn-ghost" style="margin-left:auto" onclick="document.getElementById('reply-sync-modal').remove()">Close</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+// ── Handle ?adminsync= URL param — merge a reply from an assignee ──────
+function checkAdminSyncParam(){
+  const params=new URLSearchParams(window.location.search);
+  const syncParam=params.get('adminsync');
+  if(!syncParam) return false;
+  try{
+    const payload=JSON.parse(decodeURIComponent(escape(atob(syncParam))));
+    if(!payload||!payload.syncTask) return false;
+    const incoming=payload.syncTask;
+    const idx=tasks.findIndex(t=>t.id===incoming.id);
+    if(idx===-1){
+      // Task not found locally — add it
+      tasks=[incoming,...tasks];
+    } else {
+      // Merge replies: keep all existing + add new incoming replies not already present
+      const existingReplyIds=new Set(tasks[idx].replies.map(r=>r.id));
+      const newReplies=incoming.replies.filter(r=>!existingReplyIds.has(r.id));
+      tasks[idx]={...tasks[idx],replies:[...tasks[idx].replies,...newReplies],status:incoming.status};
+    }
+    saveTasks();
+    // Clean the URL so the sync param doesn't linger
+    const cleanUrl=window.location.href.split('?')[0];
+    window.history.replaceState({},'',cleanUrl);
+    return true; // signal that a sync happened
+  }catch(e){ console.warn('Admin sync failed:',e); return false; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2379,7 +2464,17 @@ function downloadJSONTemplate(){
   a.click();
 }
 
+// ── Process any incoming reply sync BEFORE deciding admin vs user mode ──
+const _adminSyncHappened = checkAdminSyncParam();
+
 checkUrlToken();
+if(mode !== 'user' && _adminSyncHappened){
+  // Admin opened a sync link — show dashboard with a notification banner
+  showAdminLoginScreen();
+  // After login, the dashboard will show the updated replies automatically
+  // Store a flag so we can show a banner post-login
+  sessionStorage.setItem('pending_sync_notice','1');
+}
 if(mode !== 'user'){
   const params=new URLSearchParams(window.location.search);
   if(params.get('token') || params.get('email') || params.get('data')){
