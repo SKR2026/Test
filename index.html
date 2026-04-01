@@ -418,6 +418,7 @@ const normalizeExpenseRecord = (expense) => {
     guestName: normalizeOptionalText(expense.guestName || legacyGuestDetails),
     guestDesignation: normalizeOptionalText(expense.guestDesignation),
     guestDepartment: normalizeOptionalText(expense.guestDepartment),
+    guestMobile: normalizeOptionalText(expense.guestMobile),
     checkInDate: normalizeOptionalText(expense.checkInDate),
     checkInTime: normalizeOptionalText(expense.checkInTime),
     checkOutDate: normalizeOptionalText(expense.checkOutDate),
@@ -832,6 +833,7 @@ const App = () => {
       checkOutTime: headers.findIndex((header) => ['check out time', 'checkout time'].includes(header)),
       visitedFrom: headers.findIndex((header) => ['visited from location', 'visited from', 'from location'].includes(header)),
       caretakerName: headers.findIndex((header) => ['caretaker name', 'caretaker'].includes(header)),
+      guestMobile: headers.findIndex((header) => ['mobile', 'mobile no', 'mobile number', 'guest mobile', 'phone', 'phone no', 'contact no', 'contact number'].includes(header)),
       paymentCollected: headers.findIndex((header) => ['payment collected from guest', 'payment collected', 'guest payment', 'payment received from guest'].includes(header)),
     };
 
@@ -876,6 +878,7 @@ const App = () => {
       const checkOutTime = getValue(columnIndex.checkOutTime);
       const visitedFrom = getValue(columnIndex.visitedFrom);
       const caretakerName = getValue(columnIndex.caretakerName);
+      const guestMobile = getValue(columnIndex.guestMobile);
       const paymentCollectedInput = getValue(columnIndex.paymentCollected);
 
       if (!date || !guestHouseName || !categoryInput || !amountInput) {
@@ -958,6 +961,7 @@ const App = () => {
         guestName,
         guestDesignation,
         guestDepartment,
+        guestMobile,
         checkInDate: checkInDateISO,
         checkInTime,
         checkOutDate: checkOutDateISO,
@@ -986,21 +990,41 @@ const App = () => {
     window.alert(`Imported ${importedExpenses.length} expense(s).${skippedSummary}`);
   };
 
-  // Export data
+  // Export expenses
   const handleExport = () => {
     const { expenses: filteredExpenses } = getAccessibleData();
     const filtered = applyFilters(filteredExpenses);
-    
+
     const csv = buildCsv([
-      ['Date', 'Plant', 'Guest House', 'Guest Name', 'Designation', 'Department', 'Check-In Date', 'Check-In Time', 'Check-Out Date', 'Check-Out Time', 'Visited From Location', 'Caretaker Name', 'Category', 'Amount', 'Payment Collected From Guest', 'Description'],
+      ['Date', 'Plant', 'Guest House', 'Guest Name', 'Mobile No', 'Designation', 'Department', 'Check-In Date', 'Check-In Time', 'Check-Out Date', 'Check-Out Time', 'Visited From Location', 'Caretaker Name', 'Category', 'Amount', 'Payment Collected From Guest', 'Description'],
       ...filtered.map(e => {
         const gh = guestHouses.find(g => g.id === e.guestHouseId);
-        return [e.date, e.plant, gh?.name || '', e.guestName, e.guestDesignation, e.guestDepartment, e.checkInDate, e.checkInTime, e.checkOutDate, e.checkOutTime, e.visitedFrom, e.caretakerName, e.category, e.amount, e.paymentCollected, e.description];
+        return [e.date, e.plant, gh?.name || '', e.guestName, e.guestMobile, e.guestDesignation, e.guestDepartment, e.checkInDate, e.checkInTime, e.checkOutDate, e.checkOutTime, e.visitedFrom, e.caretakerName, e.category, e.amount, e.paymentCollected, e.description];
       })
     ]);
 
     downloadFile(
       `expenses_${new Date().toISOString().split('T')[0]}.csv`,
+      csv,
+      'text/csv;charset=utf-8;'
+    );
+  };
+
+  // Export guest list
+  const handleExportGuestList = () => {
+    const { expenses: filteredExpenses } = getAccessibleData();
+    const filtered = applyFilters(filteredExpenses).filter(e => e.guestName && e.guestName.trim() !== '');
+
+    const csv = buildCsv([
+      ['Guest Name', 'Mobile No', 'Designation', 'Department', 'Visited From', 'Plant', 'Guest House', 'Check-In Date', 'Check-In Time', 'Check-Out Date', 'Check-Out Time', 'Caretaker Name', 'Category', 'Amount', 'Payment Collected From Guest', 'Date'],
+      ...filtered.map(e => {
+        const gh = guestHouses.find(g => g.id === e.guestHouseId);
+        return [e.guestName, e.guestMobile, e.guestDesignation, e.guestDepartment, e.visitedFrom, e.plant, gh?.name || '', e.checkInDate, e.checkInTime, e.checkOutDate, e.checkOutTime, e.caretakerName, e.category, e.amount, e.paymentCollected, e.date];
+      })
+    ]);
+
+    downloadFile(
+      `guest_list_${new Date().toISOString().split('T')[0]}.csv`,
       csv,
       'text/csv;charset=utf-8;'
     );
@@ -1151,6 +1175,7 @@ const App = () => {
               plants={plants}
               applyFilters={applyFilters}
               handleExport={handleExport}
+              handleExportGuestList={handleExportGuestList}
             />
           )}
 
@@ -1171,6 +1196,8 @@ const App = () => {
               setFilterCategory={setFilterCategory}
               plants={plants}
               applyFilters={applyFilters}
+              handleExport={handleExport}
+              handleExportGuestList={handleExportGuestList}
             />
           )}
 
@@ -1375,7 +1402,7 @@ const ThemeSwitch = ({ darkMode, setThemeMode }) => (
 );
 
 // Dashboard View
-const DashboardView = ({ currentUser, stats, expenses, guestHouses, darkMode, filterPlant, setFilterPlant, filterGuestHouse, setFilterGuestHouse, filterCategory, setFilterCategory, filterDateFrom, setFilterDateFrom, filterDateTo, setFilterDateTo, plants, applyFilters, handleExport }) => {
+const DashboardView = ({ currentUser, stats, expenses, guestHouses, darkMode, filterPlant, setFilterPlant, filterGuestHouse, setFilterGuestHouse, filterCategory, setFilterCategory, filterDateFrom, setFilterDateFrom, filterDateTo, setFilterDateTo, plants, applyFilters, handleExport, handleExportGuestList }) => {
   const isAdmin = ['Admin', 'Super Admin', 'Top Management'].includes(currentUser.role);
 
   const roleTitle = currentUser.role === 'User' ? 'User Dashboard' :
@@ -1412,13 +1439,22 @@ const DashboardView = ({ currentUser, stats, expenses, guestHouses, darkMode, fi
               : `${filterPlant} — Plant View`}
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-medium shadow-lg hover:shadow-xl"
-        >
-          <Download className="w-4 h-4" />
-          Export Report
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExportGuestList}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors font-medium shadow-lg hover:shadow-xl"
+          >
+            <Users className="w-4 h-4" />
+            Export Guest List
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-medium shadow-lg hover:shadow-xl"
+          >
+            <Download className="w-4 h-4" />
+            Export Expenses
+          </button>
+        </div>
       </div>
 
       {/* Plant Tabs — admin/super admin/top management only */}
@@ -1611,7 +1647,7 @@ const DashboardView = ({ currentUser, stats, expenses, guestHouses, darkMode, fi
 };
 
 // Expenses View
-const ExpensesView = ({ expenses, guestHouses, currentUser, onAdd, onBulkUpload, onEdit, onDelete, filterPlant, setFilterPlant, filterGuestHouse, setFilterGuestHouse, filterCategory, setFilterCategory, plants, applyFilters }) => {
+const ExpensesView = ({ expenses, guestHouses, currentUser, onAdd, onBulkUpload, onEdit, onDelete, filterPlant, setFilterPlant, filterGuestHouse, setFilterGuestHouse, filterCategory, setFilterCategory, plants, applyFilters, handleExport, handleExportGuestList }) => {
   const filtered = applyFilters(expenses);
 
   return (
@@ -1622,6 +1658,20 @@ const ExpensesView = ({ expenses, guestHouses, currentUser, onAdd, onBulkUpload,
           <p className="text-slate-600 dark:text-slate-400 mt-1">View and manage all expense records with guest stay details</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleExportGuestList}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors font-medium shadow-sm hover:shadow-md"
+          >
+            <Users className="w-4 h-4" />
+            Export Guest List
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-medium shadow-sm hover:shadow-md"
+          >
+            <Download className="w-4 h-4" />
+            Export Expenses
+          </button>
           <button
             onClick={onBulkUpload}
             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg transition-all font-medium shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-cyan-400"
@@ -1931,14 +1981,14 @@ const BulkUploadExpensesForm = ({ formData, handleChange }) => {
 
   const TEMPLATE_HEADERS = [
     'Date','Plant','Guest House','Category','Amount',
-    'Description','Guest Name','Designation','Department',
+    'Description','Guest Name','Mobile No','Designation','Department',
     'Check-In Date','Check-In Time','Check-Out Date','Check-Out Time',
     'Visited From Location','Caretaker Name','Payment Collected From Guest'
   ];
   const REQUIRED = ['Date','Guest House','Category','Amount'];
   const SAMPLE_ROW = [
     '15-04-2026','Plant A','Executive House A','Food','3500',
-    'Dinner for visiting delegation','Rajesh Kumar','GM – Operations','Supply Chain',
+    'Dinner for visiting delegation','Rajesh Kumar','9876543210','GM – Operations','Supply Chain',
     '14-04-2026','19:00','15-04-2026','11:00','Mumbai','Suresh','500'
   ];
 
@@ -2006,7 +2056,7 @@ const BulkUploadExpensesForm = ({ formData, handleChange }) => {
           </div>
           <div>
             <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1.5">Optional</p>
-            {['Plant','Description','Guest Name','Designation','Department',
+            {['Plant','Description','Guest Name','Mobile No','Designation','Department',
               'Check-In Date','Check-In Time','Check-Out Date','Check-Out Time',
               'Visited From Location','Caretaker Name','Payment Collected From Guest'
             ].map(c=>(
@@ -2200,6 +2250,19 @@ const Modal = ({ type, data, guestHouses, plants, onClose, onSubmit }) => {
                   onChange={(e) => handleChange('guestName', e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
                   placeholder="Guest full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Mobile No
+                </label>
+                <input
+                  type="tel"
+                  value={formData.guestMobile ?? ''}
+                  onChange={(e) => handleChange('guestMobile', e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  placeholder="Guest mobile number"
+                  maxLength="15"
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2475,6 +2538,10 @@ const Modal = ({ type, data, guestHouses, plants, onClose, onSubmit }) => {
 
 const GuestInfoCell = ({ expense }) => {
   const secondaryDetails = [];
+
+  if (expense.guestMobile) {
+    secondaryDetails.push(`📱 ${expense.guestMobile}`);
+  }
 
   if (expense.guestDesignation) {
     secondaryDetails.push(`Designation: ${expense.guestDesignation}`);
