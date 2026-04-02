@@ -8,62 +8,33 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
 <!-- Firebase SDK -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-  import {
-    getFirestore, doc, getDoc, setDoc, onSnapshot
-  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+  import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
-    apiKey:            "AIzaSyCYGV5HpF6-j_HBqix3EA-XFGmT8E698k8",
-    authDomain:        "skr-task.firebaseapp.com",
-    projectId:         "skr-task",
-    storageBucket:     "skr-task.firebasestorage.app",
+    apiKey: "AIzaSyCYGV5HpF6-j_HBqix3EA-XFGmT8E698k8",
+    authDomain: "skr-task.firebaseapp.com",
+    projectId: "skr-task",
+    storageBucket: "skr-task.firebasestorage.app",
     messagingSenderId: "1011690659933",
-    appId:             "1:1011690659933:web:f57e43ee0267a475682db4"
+    appId: "1:1011690659933:web:f57e43ee0267a475682db4",
+    measurementId: "G-67NGHMK0QR"
   };
 
-  const app  = initializeApp(firebaseConfig);
-  const db   = getFirestore(app);
-  const REF  = doc(db, "taskManager", "tasks");
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
 
-  // Expose helpers to the global scope so the rest of the app can use them
-  window._fb = {
-    // Save the full tasks array to Firestore
-    save: async (tasks) => {
-      try {
-        await setDoc(REF, { data: JSON.stringify(tasks) });
-      } catch(e) {
-        console.error("Firebase save error:", e);
-      }
-    },
-    // Load tasks once on startup; fall back to SEED if nothing in Firestore
-    load: async (SEED) => {
-      try {
-        const snap = await getDoc(REF);
-        if (snap.exists() && snap.data().data) {
-          return JSON.parse(snap.data().data);
-        }
-      } catch(e) {
-        console.error("Firebase load error:", e);
-      }
-      return null; // will use SEED
-    },
-    // Subscribe to real-time updates from other devices
-    subscribe: (callback) => {
-      return onSnapshot(REF, (snap) => {
-        if (snap.exists() && snap.data().data) {
-          try { callback(JSON.parse(snap.data().data)); } catch(e) {}
-        }
-      });
-    }
-  };
-
-  // Signal that Firebase is ready
-  window._fbReady = true;
-  document.dispatchEvent(new Event("fbReady"));
+  // Expose to global scope for use elsewhere in the app
+  window.firebaseApp = app;
+  window.firebaseDB = db;
+  window.firebaseAuth = auth;
+  window.firebaseAnalytics = analytics;
 </script>
 <style>
   :root {
@@ -416,58 +387,17 @@ const SEED = [
 ];
 
 // ── state ─────────────────────────────────────────────────────────────
-let tasks = SEED; // will be replaced by Firebase data once loaded
+let tasks = JSON.parse(localStorage.getItem('tf_tasks') || 'null') || SEED;
 let mode = 'admin'; // 'admin' | 'user'
 let currentPanel = 'dashboard';
 let activeDrawerTask = null;
 let editTaskId = null;
 let pendingFiles = []; // file objects waiting to attach
 let chartInstances = {};
-let _fbSubscribed = false;
 
-function saveTasks() {
-  // Save to Firestore (async, fire-and-forget)
-  if (window._fb) {
-    window._fb.save(tasks);
-  }
-}
+function saveTasks() { localStorage.setItem('tf_tasks',JSON.stringify(tasks)); }
 function getTask(id) { return tasks.find(t=>t.id===id); }
 function updateTask(t) { tasks = tasks.map(x=>x.id===t.id?t:x); saveTasks(); }
-
-// ── Firebase boot: load tasks then subscribe to live updates ──────────
-async function initFirebase() {
-  if (!window._fb) return;
-  const loaded = await window._fb.load(SEED);
-  if (loaded) {
-    tasks = loaded;
-    refreshOverdueBadge();
-    showPanel(currentPanel);
-  }
-  // Subscribe to real-time changes from other devices/users
-  if (!_fbSubscribed) {
-    _fbSubscribed = true;
-    window._fb.subscribe((remoteTasks) => {
-      tasks = remoteTasks;
-      refreshOverdueBadge();
-      // Refresh whichever panel is currently visible
-      if (currentPanel === 'dashboard') showPanel('dashboard');
-      else if (currentPanel === 'tasks')  renderTaskRows();
-      else if (currentPanel === 'kanban') renderKanban();
-      // Refresh open drawer if any
-      if (activeDrawerTask) {
-        const updated = tasks.find(t => t.id === activeDrawerTask.id);
-        if (updated) { activeDrawerTask = updated; }
-      }
-    });
-  }
-}
-
-// Boot Firebase when the module signals it is ready
-if (window._fbReady) {
-  initFirebase();
-} else {
-  document.addEventListener("fbReady", initFirebase, { once: true });
-}
 
 // priority / status helpers
 const PRIO_COLOR = {High:'var(--red)',Medium:'var(--amber)',Low:'var(--green)'};
