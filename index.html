@@ -113,12 +113,155 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       FIREBASE CONFIGURATION
-       1. Go to https://console.firebase.google.com
-       2. Create a project → Add Web App → copy config below
-       3. In Firestore → Create database (start in test mode)
-       4. In Authentication → Sign-in method → Enable Email/Password
+       FIREBASE CONFIGURATION — managed via in-app Settings UI
+       You do NOT need to edit this file manually.
+       Click the ⚙️ Settings button that appears on the loading screen.
        ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Firebase Settings UI (shown before React mounts if config missing) -->
+  <style>
+    #fb-setup-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: linear-gradient(135deg, #020817 0%, #0b224a 50%, #123975 100%);
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-y: auto;
+    }
+    #fb-setup-overlay.visible { display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
+    .fb-card {
+      background: rgba(7,21,45,0.96); border: 1px solid rgba(96,165,250,0.25);
+      border-radius: 16px; padding: 32px; width: 100%; max-width: 520px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5); margin: auto;
+    }
+    .fb-card h1 { color:#e0ecff; font-size:1.4rem; font-weight:700; margin:0 0 4px; }
+    .fb-card .subtitle { color:#92a7d0; font-size:0.85rem; margin:0 0 24px; }
+    .fb-card label { display:block; color:#bfd2ff; font-size:0.8rem; font-weight:600; margin-bottom:4px; margin-top:14px; letter-spacing:.03em; }
+    .fb-card input {
+      width:100%; box-sizing:border-box; background:rgba(18,41,84,0.9);
+      border:1px solid rgba(96,165,250,0.2); border-radius:8px;
+      color:#e0ecff; font-size:0.85rem; padding:9px 12px; outline:none;
+      transition: border-color .2s;
+    }
+    .fb-card input:focus { border-color:rgba(96,165,250,0.6); }
+    .fb-card input::placeholder { color:#4a6a9a; }
+    .fb-btn {
+      margin-top:20px; width:100%; padding:11px; border:none; border-radius:8px;
+      background:linear-gradient(135deg,#2563eb,#0ea5e9); color:#fff;
+      font-size:0.9rem; font-weight:700; cursor:pointer; transition: opacity .2s;
+    }
+    .fb-btn:hover { opacity:.88; }
+    .fb-btn-clear {
+      margin-top:8px; width:100%; padding:8px; border:1px solid rgba(96,165,250,0.2);
+      border-radius:8px; background:transparent; color:#92a7d0;
+      font-size:0.8rem; cursor:pointer; transition: border-color .2s;
+    }
+    .fb-btn-clear:hover { border-color:rgba(96,165,250,0.5); color:#bfd2ff; }
+    .fb-err { color:#f87171; font-size:0.8rem; margin-top:10px; display:none; }
+    .fb-steps {
+      background:rgba(18,41,84,0.6); border:1px solid rgba(96,165,250,0.15);
+      border-radius:10px; padding:14px 16px; margin-bottom:22px;
+    }
+    .fb-steps p { color:#92a7d0; font-size:0.78rem; margin:0 0 6px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+    .fb-steps ol { color:#bfd2ff; font-size:0.8rem; margin:0; padding-left:18px; line-height:1.8; }
+    .fb-steps a { color:#60a5fa; }
+    .fb-badge { display:inline-block; background:rgba(37,99,235,0.3); color:#93c5fd; border-radius:6px; padding:2px 8px; font-size:0.72rem; font-weight:600; margin-bottom:12px; }
+  </style>
+
+  <div id="fb-setup-overlay">
+    <div class="fb-card">
+      <span class="fb-badge">⚙️ Firebase Setup Required</span>
+      <h1>Connect Your Database</h1>
+      <p class="subtitle">Enter your Firebase project credentials to get started. These are saved locally on your device.</p>
+
+      <div class="fb-steps">
+        <p>How to get your config</p>
+        <ol>
+          <li>Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a></li>
+          <li>Create / open your project → <strong>Project Settings</strong></li>
+          <li>Under <em>Your apps</em> → click <strong>&lt;/&gt; Web</strong> → register app</li>
+          <li>Copy the values from <code>firebaseConfig</code> into the fields below</li>
+          <li>Enable <strong>Firestore Database</strong> (test mode) &amp; <strong>Email/Password Auth</strong></li>
+        </ol>
+      </div>
+
+      <label>API Key <span style="color:#60a5fa">*</span></label>
+      <input id="fb-apiKey" placeholder="AIzaSy..." />
+
+      <label>Auth Domain <span style="color:#60a5fa">*</span></label>
+      <input id="fb-authDomain" placeholder="your-project.firebaseapp.com" />
+
+      <label>Project ID <span style="color:#60a5fa">*</span></label>
+      <input id="fb-projectId" placeholder="your-project-id" />
+
+      <label>Storage Bucket</label>
+      <input id="fb-storageBucket" placeholder="your-project.appspot.com" />
+
+      <label>Messaging Sender ID</label>
+      <input id="fb-messagingSenderId" placeholder="123456789" />
+
+      <label>App ID <span style="color:#60a5fa">*</span></label>
+      <input id="fb-appId" placeholder="1:123456789:web:abc..." />
+
+      <div class="fb-err" id="fb-err-msg"></div>
+
+      <button class="fb-btn" onclick="saveFirebaseConfig()">💾 Save &amp; Connect</button>
+      <button class="fb-btn-clear" onclick="clearFirebaseConfig()">🗑 Clear saved config</button>
+    </div>
+  </div>
+
+  <script>
+    // ── Helpers to persist Firebase config in localStorage ───────────
+    var FB_STORAGE_KEY = 'guestHouseApp_firebaseConfig';
+
+    function getSavedConfig() {
+      try { return JSON.parse(localStorage.getItem(FB_STORAGE_KEY) || 'null'); }
+      catch(e) { return null; }
+    }
+
+    function saveFirebaseConfig() {
+      var cfg = {
+        apiKey:            document.getElementById('fb-apiKey').value.trim(),
+        authDomain:        document.getElementById('fb-authDomain').value.trim(),
+        projectId:         document.getElementById('fb-projectId').value.trim(),
+        storageBucket:     document.getElementById('fb-storageBucket').value.trim(),
+        messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
+        appId:             document.getElementById('fb-appId').value.trim(),
+      };
+      var err = document.getElementById('fb-err-msg');
+      if (!cfg.apiKey || !cfg.authDomain || !cfg.projectId || !cfg.appId) {
+        err.style.display = 'block';
+        err.textContent = '⚠️ API Key, Auth Domain, Project ID and App ID are required.';
+        return;
+      }
+      err.style.display = 'none';
+      localStorage.setItem(FB_STORAGE_KEY, JSON.stringify(cfg));
+      window.location.reload();
+    }
+
+    function clearFirebaseConfig() {
+      localStorage.removeItem(FB_STORAGE_KEY);
+      window.location.reload();
+    }
+
+    // Pre-fill saved values if any
+    (function prefill() {
+      var saved = getSavedConfig();
+      if (!saved) return;
+      ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(function(k) {
+        var el = document.getElementById('fb-' + k);
+        if (el && saved[k]) el.value = saved[k];
+      });
+    })();
+
+    // Show the overlay if no valid config is saved
+    (function checkConfig() {
+      var saved = getSavedConfig();
+      if (!saved || !saved.apiKey || saved.apiKey === 'YOUR_API_KEY' || !saved.projectId || !saved.appId) {
+        document.getElementById('fb-setup-overlay').classList.add('visible');
+      }
+    })();
+  </script>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import {
@@ -129,27 +272,33 @@
       getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
     } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-    // ── PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────────
-    const firebaseConfig = {
-      apiKey:            "YOUR_API_KEY",
-      authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-      projectId:         "YOUR_PROJECT_ID",
-      storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId:             "YOUR_APP_ID"
-    };
-    // ─────────────────────────────────────────────────────────────────
+    // Load config from localStorage (set via the Settings UI above)
+    var FB_STORAGE_KEY = 'guestHouseApp_firebaseConfig';
+    var savedConfig = null;
+    try { savedConfig = JSON.parse(localStorage.getItem(FB_STORAGE_KEY) || 'null'); } catch(e) {}
 
-    const app  = initializeApp(firebaseConfig);
-    const db   = getFirestore(app);
-    const auth = getAuth(app);
+    if (!savedConfig || !savedConfig.apiKey || savedConfig.apiKey === 'YOUR_API_KEY') {
+      console.warn('⚠️ Firebase config not set — showing setup UI.');
+    } else {
+      try {
+        const app  = initializeApp(savedConfig);
+        const db   = getFirestore(app);
+        const auth = getAuth(app);
 
-    // Expose to global scope so the Babel/React script can use them
-    window._firebase = { db, auth, collection, doc, getDocs, addDoc,
-      setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
-      signInWithEmailAndPassword, signOut, onAuthStateChanged };
+        window._firebase = { db, auth, collection, doc, getDocs, addDoc,
+          setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+          signInWithEmailAndPassword, signOut, onAuthStateChanged };
 
-    console.log("✅ Firebase initialised");
+        console.log("✅ Firebase initialised with saved config");
+      } catch(err) {
+        console.error("Firebase init error:", err);
+        // Show overlay with error pre-filled
+        document.getElementById('fb-setup-overlay').classList.add('visible');
+        var errEl = document.getElementById('fb-err-msg');
+        errEl.style.display = 'block';
+        errEl.textContent = '❌ Firebase error: ' + err.message + ' — check your credentials.';
+      }
+    }
   </script>
 
   <script type="text/babel" data-presets="env,react">
