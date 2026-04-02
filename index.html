@@ -112,6 +112,46 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       FIREBASE CONFIGURATION
+       1. Go to https://console.firebase.google.com
+       2. Create a project → Add Web App → copy config below
+       3. In Firestore → Create database (start in test mode)
+       4. In Authentication → Sign-in method → Enable Email/Password
+       ═══════════════════════════════════════════════════════════════ -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import {
+      getFirestore, collection, doc, getDocs, addDoc, setDoc,
+      updateDoc, deleteDoc, onSnapshot, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import {
+      getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    // ── PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────────
+    const firebaseConfig = {
+      apiKey:            "YOUR_API_KEY",
+      authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId:         "YOUR_PROJECT_ID",
+      storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId:             "YOUR_APP_ID"
+    };
+    // ─────────────────────────────────────────────────────────────────
+
+    const app  = initializeApp(firebaseConfig);
+    const db   = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Expose to global scope so the Babel/React script can use them
+    window._firebase = { db, auth, collection, doc, getDocs, addDoc,
+      setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+      signInWithEmailAndPassword, signOut, onAuthStateChanged };
+
+    console.log("✅ Firebase initialised");
+  </script>
+
   <script type="text/babel" data-presets="env,react">
 const { useState, useEffect } = React;
 
@@ -333,36 +373,49 @@ const PolyplasticsLogo = () => (
   </div>
 );
 
-const STORAGE_KEYS = {
-  themeMode: 'ghm_theme_mode',
-  darkMode: 'ghm_dark_mode',
-  users: 'ghm_users',
-  plants: 'ghm_plants',
-  guestHouses: 'ghm_guest_houses',
-  expenses: 'ghm_expenses',
-};
+// ── Theme persisted in localStorage (per-device preference, not shared data) ──
+const STORAGE_KEYS = { themeMode: 'ghm_theme_mode', darkMode: 'ghm_dark_mode' };
 
 const loadStoredValue = (key, fallback) => {
   try {
-    const rawValue = window.localStorage.getItem(key);
-    if (!rawValue) {
-      return fallback;
-    }
-
-    const parsedValue = JSON.parse(rawValue);
-    return parsedValue ?? fallback;
-  } catch (error) {
-    console.warn(`Unable to read ${key} from localStorage.`, error);
-    return fallback;
-  }
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) ?? fallback) : fallback;
+  } catch { return fallback; }
 };
 
 const saveStoredValue = (key, value) => {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.warn(`Unable to save ${key} to localStorage.`, error);
-  }
+  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch {}
+};
+
+// ── Firebase helpers ──────────────────────────────────────────────────────────
+const fb = () => window._firebase; // shorthand getter
+
+const fbCol  = (name)       => fb().collection(fb().db, name);
+const fbDoc  = (name, id)   => fb().doc(fb().db, name, String(id));
+
+const fbGetAll = async (colName) => {
+  const snap = await fb().getDocs(fbCol(colName));
+  return snap.docs.map(d => ({ ...d.data(), _fbId: d.id }));
+};
+
+const fbAdd = async (colName, data) => {
+  const ref = await fb().addDoc(fbCol(colName), data);
+  return ref.id;
+};
+
+const fbSet = async (colName, id, data) => {
+  await fb().setDoc(fbDoc(colName, id), data, { merge: true });
+};
+
+const fbDelete = async (colName, id) => {
+  await fb().deleteDoc(fbDoc(colName, id));
+};
+
+// Real-time listener helper — returns unsubscribe function
+const fbListen = (colName, callback) => {
+  return fb().onSnapshot(fbCol(colName), (snap) => {
+    callback(snap.docs.map(d => ({ ...d.data(), _fbId: d.id })));
+  });
 };
 
 const getNextId = (items) => items.reduce((maxId, item) => Math.max(maxId, Number(item.id) || 0), 0) + 1;
@@ -445,13 +498,9 @@ const formatCurrencyDisplay = (value) => {
 };
 
 const getInitialThemeMode = () => {
-  const savedThemeMode = loadStoredValue(STORAGE_KEYS.themeMode, null);
-  if (savedThemeMode === 'light' || savedThemeMode === 'dark-blue') {
-    return savedThemeMode;
-  }
-
-  const legacyDarkMode = loadStoredValue(STORAGE_KEYS.darkMode, false);
-  return legacyDarkMode ? 'dark-blue' : 'light';
+  const saved = loadStoredValue(STORAGE_KEYS.themeMode, null);
+  if (saved === 'light' || saved === 'dark-blue') return saved;
+  return loadStoredValue(STORAGE_KEYS.darkMode, false) ? 'dark-blue' : 'light';
 };
 
 const parseCsv = (text) => {
@@ -544,14 +593,12 @@ const categories = ['Food', 'Maintenance', 'Utilities', 'Miscellaneous'];
 const App = () => {
   const [themeMode, setThemeMode] = useState(getInitialThemeMode);
   const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState(() => loadStoredValue(STORAGE_KEYS.users, initialUsers));
-  const [plants, setPlants] = useState(() => loadStoredValue(STORAGE_KEYS.plants, initialPlants));
-  const [guestHouses, setGuestHouses] = useState(() => loadStoredValue(STORAGE_KEYS.guestHouses, initialGuestHouses));
-  const [expenses, setExpenses] = useState(() => {
-    const storedExpenses = loadStoredValue(STORAGE_KEYS.expenses, initialExpenses);
-    const expenseRecords = Array.isArray(storedExpenses) ? storedExpenses : initialExpenses;
-    return expenseRecords.map(normalizeExpenseRecord);
-  });
+  const [users, setUsers] = useState([]);
+  const [plants, setPlants] = useState([]);
+  const [guestHouses, setGuestHouses] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [dbReady, setDbReady] = useState(false);   // true once Firebase data loaded
+  const [dbError, setDbError] = useState(null);     // holds error message if Firebase fails
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('');
@@ -564,6 +611,7 @@ const App = () => {
   const [filterDateTo, setFilterDateTo] = useState('');
   const darkMode = themeMode === 'dark-blue';
 
+  // Theme — still local only (per-device preference)
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
     document.body.classList.toggle('dark', darkMode);
@@ -576,31 +624,88 @@ const App = () => {
     saveStoredValue(STORAGE_KEYS.darkMode, darkMode);
   }, [themeMode, darkMode]);
 
+  // ── Firebase: seed initial data if collections are empty, then listen ──────
   useEffect(() => {
-    saveStoredValue(STORAGE_KEYS.users, users);
-  }, [users]);
+    if (!window._firebase) {
+      setDbError('Firebase not initialised. Check your firebaseConfig in the HTML file.');
+      return;
+    }
 
-  useEffect(() => {
-    saveStoredValue(STORAGE_KEYS.plants, plants);
-  }, [plants]);
+    let unsubs = [];
 
-  useEffect(() => {
-    saveStoredValue(STORAGE_KEYS.guestHouses, guestHouses);
-  }, [guestHouses]);
+    const bootstrap = async () => {
+      try {
+        // Seed users if empty
+        const existingUsers = await fbGetAll('users');
+        if (existingUsers.length === 0) {
+          for (const u of initialUsers) {
+            await fbSet('users', u.id, u);
+          }
+        }
+        // Seed plants if empty
+        const existingPlants = await fbGetAll('plants');
+        if (existingPlants.length === 0) {
+          for (const p of initialPlants) {
+            await fbSet('plants', p, { name: p });
+          }
+        }
+        // Seed guest houses if empty
+        const existingGH = await fbGetAll('guestHouses');
+        if (existingGH.length === 0) {
+          for (const gh of initialGuestHouses) {
+            await fbSet('guestHouses', gh.id, gh);
+          }
+        }
+        // Seed expenses if empty
+        const existingExp = await fbGetAll('expenses');
+        if (existingExp.length === 0) {
+          for (const e of initialExpenses) {
+            await fbSet('expenses', e.id, normalizeExpenseRecord(e));
+          }
+        }
 
-  useEffect(() => {
-    saveStoredValue(STORAGE_KEYS.expenses, expenses);
-  }, [expenses]);
+        // Real-time listeners — update React state on any Firestore change
+        unsubs.push(fbListen('users', (docs) => {
+          setUsers(docs.map(d => ({ ...d, id: isNaN(d.id) ? d._fbId : Number(d.id) })));
+        }));
+        unsubs.push(fbListen('plants', (docs) => {
+          setPlants(docs.map(d => d.name).filter(Boolean).sort());
+        }));
+        unsubs.push(fbListen('guestHouses', (docs) => {
+          setGuestHouses(docs.map(d => ({ ...d, id: isNaN(d.id) ? d._fbId : Number(d.id) })));
+        }));
+        unsubs.push(fbListen('expenses', (docs) => {
+          setExpenses(docs.map(d => normalizeExpenseRecord({
+            ...d, id: isNaN(d.id) ? d._fbId : Number(d.id)
+          })));
+        }));
 
-  // Authentication
-  const handleLogin = (username, password) => {
-    const user = users.find(u => u.username === username && u.password === password);
-    if (user) {
-      setCurrentUser(user);
+        setDbReady(true);
+      } catch (err) {
+        console.error('Firebase bootstrap error:', err);
+        setDbError('Could not connect to Firebase: ' + err.message);
+      }
+    };
+
+    bootstrap();
+    return () => unsubs.forEach(u => u()); // cleanup listeners on unmount
+  }, []);
+
+  // ── Authentication ──────────────────────────────────────────────────────────
+  // Login: match username in Firestore users collection, then verify password
+  const handleLogin = async (username, password) => {
+    try {
+      // Find user document by username field
+      const allUsers = await fbGetAll('users');
+      const userDoc = allUsers.find(u => u.username === username && u.password === password);
+      if (!userDoc) return false;
+      setCurrentUser({ ...userDoc, id: isNaN(userDoc.id) ? userDoc._fbId : Number(userDoc.id) });
       setActiveTab('dashboard');
       return true;
+    } catch (err) {
+      console.error('Login error:', err);
+      return false;
     }
-    return false;
   };
 
   const handleLogout = () => {
@@ -624,16 +729,13 @@ const App = () => {
     setFormData({});
   };
 
-  const ensurePlantExists = (plantName) => {
+  const ensurePlantExists = async (plantName) => {
     const normalizedPlant = `${plantName ?? ''}`.trim();
-    if (!normalizedPlant) {
-      return '';
+    if (!normalizedPlant) return '';
+    if (!plants.includes(normalizedPlant)) {
+      try { await fbSet('plants', normalizedPlant, { name: normalizedPlant }); }
+      catch (err) { console.warn('Could not save plant:', err); }
     }
-
-    setPlants((currentPlants) => (
-      currentPlants.includes(normalizedPlant) ? currentPlants : [...currentPlants, normalizedPlant]
-    ));
-
     return normalizedPlant;
   };
 
@@ -679,120 +781,99 @@ const App = () => {
     });
   };
 
-  // CRUD Operations
-  const handleAddExpense = (data) => {
+  // ── CRUD Operations — all write to Firestore ────────────────────────────────
+  // Firestore real-time listeners above will automatically update React state.
+
+  const handleAddExpense = async (data) => {
     const expensePayload = buildExpensePayload(data);
-    if (!expensePayload) {
-      return;
-    }
-
-    setExpenses((currentExpenses) => [
-      ...currentExpenses,
-      { ...expensePayload, id: getNextId(currentExpenses), userId: currentUser.id },
-    ]);
-    closeModal();
+    if (!expensePayload) return;
+    const newId = getNextId(expenses);
+    const record = { ...expensePayload, id: newId, userId: currentUser.id };
+    try {
+      await fbSet('expenses', newId, record);
+      closeModal();
+    } catch (err) { window.alert('Save failed: ' + err.message); }
   };
 
-  const handleEditExpense = (data) => {
+  const handleEditExpense = async (data) => {
     const expensePayload = buildExpensePayload(data, selectedItem);
-    if (!expensePayload) {
-      return;
-    }
-
-    setExpenses((currentExpenses) => currentExpenses.map((expense) =>
-      expense.id === selectedItem.id ? expensePayload : expense
-    ));
-    closeModal();
+    if (!expensePayload) return;
+    try {
+      await fbSet('expenses', selectedItem.id, expensePayload);
+      closeModal();
+    } catch (err) { window.alert('Update failed: ' + err.message); }
   };
 
-  const handleDeleteExpense = (id) => {
-    setExpenses(expenses.filter(e => e.id !== id));
+  const handleDeleteExpense = async (id) => {
+    try { await fbDelete('expenses', id); }
+    catch (err) { window.alert('Delete failed: ' + err.message); }
   };
 
-  const handleAddUser = (data) => {
-    const newUser = {
-      id: getNextId(users),
-      ...data,
-    };
-    setUsers((currentUsers) => [...currentUsers, newUser]);
-    closeModal();
+  const handleAddUser = async (data) => {
+    const newId = getNextId(users);
+    const newUser = { id: newId, ...data };
+    try {
+      await fbSet('users', newId, newUser);
+      closeModal();
+    } catch (err) { window.alert('Save failed: ' + err.message); }
   };
 
-  const handleEditUser = (data) => {
-    setUsers(users.map(u => u.id === selectedItem.id ? { ...u, ...data } : u));
-    closeModal();
+  const handleEditUser = async (data) => {
+    const updated = { ...selectedItem, ...data };
+    try {
+      await fbSet('users', selectedItem.id, updated);
+      closeModal();
+    } catch (err) { window.alert('Update failed: ' + err.message); }
   };
 
-  const handleDeleteUser = (id) => {
-    setUsers(users.filter(u => u.id !== id));
+  const handleDeleteUser = async (id) => {
+    try { await fbDelete('users', id); }
+    catch (err) { window.alert('Delete failed: ' + err.message); }
   };
 
-  const handleAddGuestHouse = (data) => {
+  const handleAddGuestHouse = async (data) => {
     const name = `${data.name ?? ''}`.trim();
     const plant = `${data.plant ?? ''}`.trim();
-
-    if (!name || !plant) {
-      window.alert('Please provide both a guest house name and a plant.');
-      return;
-    }
-
-    const alreadyExists = guestHouses.some((guestHouse) => (
-      normalizeText(guestHouse.name) === normalizeText(name) &&
-      normalizeText(guestHouse.plant) === normalizeText(plant)
-    ));
-
-    if (alreadyExists) {
-      window.alert('A guest house with the same name already exists for this plant.');
-      return;
-    }
-
-    ensurePlantExists(plant);
-    setGuestHouses((currentGuestHouses) => [
-      ...currentGuestHouses,
-      { id: getNextId(currentGuestHouses), name, plant },
-    ]);
-    closeModal();
+    if (!name || !plant) { window.alert('Please provide both a guest house name and a plant.'); return; }
+    const alreadyExists = guestHouses.some(gh =>
+      normalizeText(gh.name) === normalizeText(name) &&
+      normalizeText(gh.plant) === normalizeText(plant)
+    );
+    if (alreadyExists) { window.alert('A guest house with the same name already exists for this plant.'); return; }
+    const newId = getNextId(guestHouses);
+    try {
+      await ensurePlantExists(plant);
+      await fbSet('guestHouses', newId, { id: newId, name, plant });
+      closeModal();
+    } catch (err) { window.alert('Save failed: ' + err.message); }
   };
 
-  const handleDeleteGuestHouse = (id) => {
+  const handleDeleteGuestHouse = async (id) => {
     const hasExpenses = expenses.some(e => e.guestHouseId === id);
-    if (hasExpenses) {
-      window.alert('Cannot delete this guest house because it has associated expense records. Please delete those expenses first.');
-      return;
-    }
-    if (window.confirm('Are you sure you want to delete this guest house? This action cannot be undone.')) {
-      setGuestHouses(guestHouses.filter(gh => gh.id !== id));
-    }
+    if (hasExpenses) { window.alert('Cannot delete this guest house because it has associated expense records. Please delete those expenses first.'); return; }
+    if (!window.confirm('Are you sure you want to delete this guest house? This action cannot be undone.')) return;
+    try { await fbDelete('guestHouses', id); }
+    catch (err) { window.alert('Delete failed: ' + err.message); }
   };
 
-  const handleEditGuestHouse = (data) => {
+  const handleEditGuestHouse = async (data) => {
     const name = `${data.name ?? ''}`.trim();
     const plant = `${data.plant ?? ''}`.trim();
-
-    if (!name || !plant) {
-      window.alert('Please provide both a guest house name and a plant.');
-      return;
-    }
-
-    const alreadyExists = guestHouses.some((guestHouse) => (
-      guestHouse.id !== selectedItem.id &&
-      normalizeText(guestHouse.name) === normalizeText(name) &&
-      normalizeText(guestHouse.plant) === normalizeText(plant)
-    ));
-
-    if (alreadyExists) {
-      window.alert('A guest house with the same name already exists for this plant.');
-      return;
-    }
-
-    ensurePlantExists(plant);
-    setGuestHouses(guestHouses.map(gh =>
-      gh.id === selectedItem.id ? { ...gh, name, plant } : gh
-    ));
-    setExpenses(expenses.map((expense) => (
-      expense.guestHouseId === selectedItem.id ? { ...expense, plant } : expense
-    )));
-    closeModal();
+    if (!name || !plant) { window.alert('Please provide both a guest house name and a plant.'); return; }
+    const alreadyExists = guestHouses.some(gh =>
+      gh.id !== selectedItem.id &&
+      normalizeText(gh.name) === normalizeText(name) &&
+      normalizeText(gh.plant) === normalizeText(plant)
+    );
+    if (alreadyExists) { window.alert('A guest house with the same name already exists for this plant.'); return; }
+    try {
+      await ensurePlantExists(plant);
+      await fbSet('guestHouses', selectedItem.id, { ...selectedItem, name, plant });
+      // Update plant field on all linked expenses
+      const linkedExpenses = expenses.filter(e => e.guestHouseId === selectedItem.id);
+      await Promise.all(linkedExpenses.map(e => fbSet('expenses', e.id, { ...e, plant })));
+      closeModal();
+    } catch (err) { window.alert('Update failed: ' + err.message); }
   };
 
   const handleBulkUploadExpenses = async (data) => {
@@ -980,7 +1061,12 @@ const App = () => {
       return;
     }
 
-    setExpenses((currentExpenses) => [...currentExpenses, ...importedExpenses]);
+    try {
+      await Promise.all(importedExpenses.map(e => fbSet('expenses', e.id, e)));
+    } catch (err) {
+      window.alert('Import failed while saving to Firebase: ' + err.message);
+      return;
+    }
     closeModal();
 
     const skippedSummary = skippedRows.length > 0
@@ -1068,6 +1154,42 @@ const App = () => {
     return { total, byCategory, byPlant, byGuestHouse, count: filtered.length };
   };
 
+  // Show error if Firebase config is missing/wrong
+  if (dbError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-lg w-full border border-red-200">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 bg-red-100 rounded-xl">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            </div>
+            <h2 className="text-xl font-bold text-red-700">Firebase Not Configured</h2>
+          </div>
+          <p className="text-slate-600 mb-4 text-sm leading-relaxed">{dbError}</p>
+          <div className="bg-slate-50 rounded-xl p-4 text-xs font-mono text-slate-700 space-y-1">
+            <p className="font-bold text-slate-900 mb-2 not-italic">Quick setup steps:</p>
+            <p>1. Go to console.firebase.google.com</p>
+            <p>2. Create project → Add Web App → copy config</p>
+            <p>3. Open this HTML file, search for YOUR_API_KEY and paste your config</p>
+            <p>4. In Firestore → Create database (start in test mode)</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show spinner while Firebase loads data
+  if (!dbReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-slate-600 font-medium">Connecting to database…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return <LoginScreen onLogin={handleLogin} darkMode={darkMode} setThemeMode={setThemeMode} />;
   }
@@ -1098,7 +1220,14 @@ const App = () => {
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{currentUser.name}</p>
                   <p className="text-xs text-slate-600 dark:text-slate-400">{currentUser.role} | {currentUser.plant}</p>
                 </div>
+                <div className="flex items-center gap-3">
+                {/* Firebase live indicator */}
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800" title="Connected to Firebase — data is shared live">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                  <span className="text-xs text-green-700 dark:text-green-400 font-medium hidden sm:inline">Live</span>
+                </div>
                 <ThemeSwitch darkMode={darkMode} setThemeMode={setThemeMode} />
+              </div>
                 <button
                   onClick={handleLogout}
                   className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
@@ -1257,18 +1386,45 @@ const App = () => {
 };
 
 // Login Screen
+const FirebaseSetupBanner = () => {
+  const isDefault = !window._firebase ||
+    (typeof window._firebase === 'object' && Object.keys(window._firebase).length === 0);
+  // Try to detect unconfigured state by checking if apiKey is still placeholder
+  const [unconfigured, setUnconfigured] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      const app = window._firebase && window._firebase.db && window._firebase.db.app;
+      if (app && app.options && app.options.apiKey === 'YOUR_API_KEY') setUnconfigured(true);
+    } catch {}
+  }, []);
+  if (!unconfigured) return null;
+  return (
+    <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm text-amber-800 space-y-2">
+      <p className="font-bold flex items-center gap-2">
+        <span>⚠️</span> Firebase config not set — app is in demo mode
+      </p>
+      <p className="text-xs leading-relaxed">
+        Data entered here will NOT be shared with other users until you configure Firebase.
+        Open this HTML file and replace <code className="bg-amber-100 px-1 rounded">YOUR_API_KEY</code> with your real Firebase project config.
+      </p>
+    </div>
+  );
+};
+
 const LoginScreen = ({ onLogin, darkMode, setThemeMode }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (onLogin(username, password)) {
+    setError('Signing in…');
+    const ok = await onLogin(username, password);
+    if (ok) {
       setError('');
     } else {
-      setError('Invalid credentials');
+      setError('Invalid username or password.');
     }
   };
 
@@ -1340,8 +1496,9 @@ const LoginScreen = ({ onLogin, darkMode, setThemeMode }) => {
             </button>
           </form>
 
+          <FirebaseSetupBanner />
           <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-            <p className="text-xs text-blue-800 dark:text-blue-300 font-semibold mb-2">Demo Credentials:</p>
+            <p className="text-xs text-blue-800 dark:text-blue-300 font-semibold mb-2">Default Credentials:</p>
             <div className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <p>Admin: admin / admin123</p>
               <p>User: user1 / user123</p>
@@ -3074,3 +3231,53 @@ root.render(<App />);
   </script>
 </body>
 </html>
+<!--
+╔══════════════════════════════════════════════════════════════════════╗
+║              FIREBASE SETUP GUIDE — READ BEFORE DEPLOYING           ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  STEP 1 — Create Firebase project                                    ║
+║    • Go to: console.firebase.google.com                              ║
+║    • Click "Add project" → give it a name → Continue                ║
+║                                                                      ║
+║  STEP 2 — Register your web app                                      ║
+║    • In project overview → click </> (Web) icon                      ║
+║    • Copy the firebaseConfig object                                   ║
+║    • Paste it into this HTML file (search: YOUR_API_KEY)             ║
+║                                                                      ║
+║  STEP 3 — Enable Firestore                                           ║
+║    • Build → Firestore Database → Create database                    ║
+║    • Choose "Start in test mode" (good for 30 days)                  ║
+║    • After testing, set production rules below                       ║
+║                                                                      ║
+║  STEP 4 — Firestore Security Rules (paste in Firebase console)       ║
+║  ┌──────────────────────────────────────────────────────────────┐   ║
+║  │ rules_version = '2';                                          │   ║
+║  │ service cloud.firestore {                                     │   ║
+║  │   match /databases/{database}/documents {                     │   ║
+║  │     // Allow read/write only if request comes from your domain│   ║
+║  │     match /{document=**} {                                    │   ║
+║  │       allow read, write: if true; // CHANGE FOR PRODUCTION    │   ║
+║  │     }                                                         │   ║
+║  │   }                                                           │   ║
+║  │ }                                                             │   ║
+║  └──────────────────────────────────────────────────────────────┘   ║
+║                                                                      ║
+║  STEP 5 — Deploy to GitHub Pages                                     ║
+║    • Push this index.html to your GitHub repo                        ║
+║    • Settings → Pages → Source: main branch / root                   ║
+║    • Your app will be live at: username.github.io/repo-name          ║
+║                                                                      ║
+║  COLLECTIONS CREATED IN FIRESTORE:                                   ║
+║    • users       — user accounts (id, username, password, role…)     ║
+║    • plants      — plant names (id = plant name, name field)         ║
+║    • guestHouses — guest house records (id, name, plant)             ║
+║    • expenses    — expense records (all fields)                      ║
+║                                                                      ║
+║  DATA SAFETY DURING HTML UPDATES:                                    ║
+║    • All data lives in Firestore — untouched when you update HTML    ║
+║    • Just push new index.html to GitHub — data is always safe        ║
+║    • No migration needed unless you rename Firestore fields          ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+-->
