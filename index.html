@@ -253,13 +253,8 @@
       });
     })();
 
-    // Show the overlay if no valid config is saved
-    (function checkConfig() {
-      var saved = getSavedConfig();
-      if (!saved || !saved.apiKey || saved.apiKey === 'YOUR_API_KEY' || !saved.projectId || !saved.appId) {
-        document.getElementById('fb-setup-overlay').classList.add('visible');
-      }
-    })();
+    // Config is hardcoded — overlay never shown to any user
+    // (function checkConfig() { ... })();
   </script>
 
   <script type="module">
@@ -272,13 +267,18 @@
       getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
     } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-    // Load config from localStorage (set via the Settings UI above)
-    var FB_STORAGE_KEY = 'guestHouseApp_firebaseConfig';
-    var savedConfig = null;
-    try { savedConfig = JSON.parse(localStorage.getItem(FB_STORAGE_KEY) || 'null'); } catch(e) {}
+    // ✅ Firebase config hardcoded — no setup needed for any user
+    const savedConfig = {
+      apiKey:            "AIzaSyCYGV5HpF6-j_HBqix3EA-XFGmT8E698k8",
+      authDomain:        "skr-task.firebaseapp.com",
+      projectId:         "skr-task",
+      storageBucket:     "skr-task.firebasestorage.app",
+      messagingSenderId: "1011690659933",
+      appId:             "1:1011690659933:web:f57e43ee0267a475682db4"
+    };
 
-    if (!savedConfig || !savedConfig.apiKey || savedConfig.apiKey === 'YOUR_API_KEY') {
-      console.warn('⚠️ Firebase config not set — showing setup UI.');
+    if (false) {
+      // never shown — config is hardcoded above
     } else {
       try {
         const app  = initializeApp(savedConfig);
