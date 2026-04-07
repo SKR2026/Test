@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SecureReport — Whistleblower Portal</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -12,6 +15,8 @@
     --border:#1e2430; --border2:#2a3040;
     --accent:#00e5a0; --accent2:#00b87d;
     --adm:#7b8cff; --adm2:#5a6adf;
+    --sa:#f5c542; --sa2:#c9960e;
+    --tm:#b06fff; --tm2:#8844dd;
     --danger:#ff4d6a; --warn:#ffaa00;
     --text:#e8ecf0; --text2:#8896a8; --text3:#4a5568;
     --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif;
@@ -20,17 +25,17 @@
   body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;min-height:100vh;overflow-x:hidden;}
   body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,160,0.012) 2px,rgba(0,229,160,0.012) 4px);pointer-events:none;z-index:999;}
 
-  /* ROLE SCREEN */
+  /* ─── ROLE SCREEN ─────────────────────────────────────── */
   #roleScreen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:40px;}
   .rs-logo{text-align:center;}
   .rs-logo svg{width:58px;height:58px;display:block;margin:0 auto 14px;}
   .rs-logo h1{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;}
   .rs-logo p{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:0.06em;margin-top:4px;}
-  .rs-cards{display:flex;gap:18px;}
-  .rs-card{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:28px 32px;width:196px;text-align:center;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:12px;}
+  .rs-cards{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;}
+  .rs-card{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:28px 32px;width:190px;text-align:center;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:12px;}
   .rs-card:hover{transform:translateY(-3px);}
   .rs-card.uc:hover{border-color:var(--accent);box-shadow:0 0 24px rgba(0,229,160,0.1);}
-  .rs-card.ac:hover{border-color:var(--adm);box-shadow:0 0 24px rgba(123,140,255,0.1);}
+  .rs-card.ac:hover{border-color:var(--adm);box-shadow:0 0 24px rgba(123,140,255,0.12);}
   .rs-card .rci{font-size:30px;}
   .rs-card h2{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;}
   .rs-card.uc h2{color:var(--accent);}
@@ -38,52 +43,67 @@
   .rs-card p{font-size:11px;color:var(--text3);line-height:1.5;}
   .no-pass{font-family:var(--mono);font-size:9px;color:var(--accent);background:rgba(0,229,160,0.08);border:1px solid rgba(0,229,160,0.2);border-radius:2px;padding:3px 7px;text-transform:uppercase;letter-spacing:0.06em;}
 
-  /* LOGIN (admin only) */
+  /* ─── LOGIN ────────────────────────────────────────────── */
   #loginScreen{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:190;flex-direction:column;gap:26px;}
   .login-back{font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;transition:color 0.15s;}
   .login-back:hover{color:var(--text2);}
-  .login-box{background:var(--surface);border:1px solid var(--border2);border-radius:5px;padding:30px;width:340px;display:flex;flex-direction:column;gap:16px;}
+  .login-box{background:var(--surface);border:1px solid var(--border2);border-radius:5px;padding:30px;width:360px;display:flex;flex-direction:column;gap:16px;}
   .ltitle{font-family:var(--mono);font-size:12px;letter-spacing:0.1em;text-transform:uppercase;padding-bottom:13px;border-bottom:1px solid var(--border);color:var(--adm);}
   .login-box label{font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;}
   .login-box input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none;transition:border-color 0.2s;}
+  .login-box input:focus{border-color:var(--adm);}
   .lhint{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;}
-  .lhint .ha{color:var(--adm);}
-  .lerr{font-family:var(--mono);font-size:11px;color:var(--danger);text-align:center;display:none;}
+  .lerr{font-family:var(--mono);font-size:11px;color:var(--danger);text-align:center;display:none;padding:8px;background:rgba(255,77,106,0.07);border:1px solid rgba(255,77,106,0.2);border-radius:3px;}
   .btn-a{background:var(--adm);color:#fff;border:none;border-radius:3px;padding:12px;width:100%;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:background 0.15s;}
   .btn-a:hover{background:var(--adm2);}
+  .role-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;}
+  .rpill{font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:2px;border:1px solid;letter-spacing:0.06em;text-transform:uppercase;}
+  .rpill.sa{color:var(--sa);border-color:rgba(245,197,66,0.3);background:rgba(245,197,66,0.06);}
+  .rpill.adm{color:var(--adm);border-color:rgba(123,140,255,0.3);background:rgba(123,140,255,0.06);}
+  .rpill.tm{color:var(--tm);border-color:rgba(176,111,255,0.3);background:rgba(176,111,255,0.06);}
 
-  /* APP HEADER */
+  /* ─── APP HEADER ───────────────────────────────────────── */
   #app{display:none;}
   header{border-bottom:1px solid var(--border);padding:13px 26px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:rgba(10,12,15,0.96);backdrop-filter:blur(10px);z-index:50;}
   .hb{display:flex;align-items:center;gap:11px;}
   .dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite;}
   .du{background:var(--accent);box-shadow:0 0 7px var(--accent);}
   .da{background:var(--adm);box-shadow:0 0 7px var(--adm);}
+  .dsa{background:var(--sa);box-shadow:0 0 7px var(--sa);}
+  .dtm{background:var(--tm);box-shadow:0 0 7px var(--tm);}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.25}}
   .hb h1{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;}
   .hb h1.u{color:var(--accent);}
   .hb h1.a{color:var(--adm);}
-  .hnav{display:flex;gap:4px;}
+  .hb h1.sa{color:var(--sa);}
+  .hb h1.tm{color:var(--tm);}
+  .hnav{display:flex;gap:4px;flex-wrap:wrap;}
   .nb{background:none;border:1px solid transparent;border-radius:3px;padding:6px 14px;color:var(--text2);font-family:var(--mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:all 0.15s;}
   .nb:hover{border-color:var(--border2);color:var(--text);}
   .nb.au{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,0.06);}
   .nb.aa{border-color:var(--adm);color:var(--adm);background:rgba(123,140,255,0.06);}
+  .nb.asa{border-color:var(--sa);color:var(--sa);background:rgba(245,197,66,0.06);}
+  .nb.atm{border-color:var(--tm);color:var(--tm);background:rgba(176,111,255,0.06);}
   .hr{display:flex;align-items:center;gap:10px;}
   .rbadge{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;border-radius:2px;padding:4px 10px;text-transform:uppercase;border:1px solid;}
   .rbadge.u{color:var(--accent);background:rgba(0,229,160,0.08);border-color:rgba(0,229,160,0.2);}
   .rbadge.a{color:var(--adm);background:rgba(123,140,255,0.08);border-color:rgba(123,140,255,0.2);}
+  .rbadge.sa{color:var(--sa);background:rgba(245,197,66,0.08);border-color:rgba(245,197,66,0.2);}
+  .rbadge.tm{color:var(--tm);background:rgba(176,111,255,0.08);border-color:rgba(176,111,255,0.2);}
   .lkbtn{background:none;border:1px solid var(--border2);border-radius:3px;padding:5px 12px;color:var(--text3);font-family:var(--mono);font-size:10px;cursor:pointer;transition:all 0.15s;text-transform:uppercase;letter-spacing:0.06em;}
   .lkbtn:hover{border-color:var(--danger);color:var(--danger);}
 
-  /* PAGES */
-  .page{display:none;padding:34px 26px;max-width:920px;margin:0 auto;}
+  /* ─── PAGES ────────────────────────────────────────────── */
+  .page{display:none;padding:34px 26px;max-width:960px;margin:0 auto;}
   .page.active{display:block;}
   .ptitle{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:24px;display:flex;align-items:center;gap:10px;}
   .ptitle::before{content:'';display:block;width:14px;height:1px;}
   .ptitle.u::before{background:var(--accent);}
   .ptitle.a::before{background:var(--adm);}
+  .ptitle.sa::before{background:var(--sa);}
+  .ptitle.tm::before{background:var(--tm);}
 
-  /* FORM */
+  /* ─── FORMS ────────────────────────────────────────────── */
   .fg{display:flex;flex-direction:column;gap:20px;}
   .frow{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .field{display:flex;flex-direction:column;gap:6px;}
@@ -113,18 +133,31 @@
   .fi .rmf{color:var(--danger);cursor:pointer;background:none;border:none;font-size:14px;}
   .sbtn{background:var(--accent);color:#000;border:none;border-radius:3px;padding:12px 24px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:all 0.15s;align-self:flex-start;}
   .sbtn:hover{background:var(--accent2);transform:translateY(-1px);}
+  .sbtn.sa-btn{background:var(--sa);color:#000;}
+  .sbtn.sa-btn:hover{background:var(--sa2);}
+  .sbtn.tm-btn{background:var(--tm);color:#fff;}
+  .sbtn.tm-btn:hover{background:var(--tm2);}
+  .sbtn.adm-btn{background:var(--adm);color:#fff;}
+  .sbtn.adm-btn:hover{background:var(--adm2);}
+  .sbtn.danger-btn{background:none;border:1px solid rgba(255,77,106,0.4);color:var(--danger);}
+  .sbtn.danger-btn:hover{background:rgba(255,77,106,0.08);border-color:var(--danger);}
 
-  /* SUCCESS */
+  /* ─── SUCCESS ──────────────────────────────────────────── */
   #sc{display:none;background:var(--surface);border:1px solid rgba(0,229,160,0.18);border-radius:4px;padding:34px;text-align:center;flex-direction:column;align-items:center;gap:13px;}
   #sc.show{display:flex;}
   #sc h2{font-family:var(--mono);font-size:15px;color:var(--accent);letter-spacing:0.08em;}
   #sc p{font-size:13px;color:var(--text2);line-height:1.6;}
+  .sync-note{display:none;max-width:560px;border-radius:3px;padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.7;text-align:left;}
+  .sync-note.show{display:block;}
+  .sync-note.cloud{background:rgba(0,229,160,0.08);border:1px solid rgba(0,229,160,0.22);color:var(--accent);}
+  .sync-note.local{background:rgba(255,170,0,0.08);border:1px solid rgba(255,170,0,0.22);color:var(--warn);}
   .rid{background:var(--bg);border:1px solid var(--accent);border-radius:3px;padding:12px 24px;font-family:var(--mono);font-size:20px;font-weight:600;color:var(--accent);letter-spacing:0.15em;}
 
-  /* REPORTS */
+  /* ─── REPORT CARDS ─────────────────────────────────────── */
   .rgrid{display:flex;flex-direction:column;gap:10px;}
   .rcard{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:17px 19px;cursor:pointer;transition:border-color 0.15s;display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:start;}
   .rcard:hover{border-color:var(--border2);}
+  .rcard.readonly{cursor:default;}
   .rcid{font-family:var(--mono);font-size:11px;color:var(--accent);background:rgba(0,229,160,0.08);border:1px solid rgba(0,229,160,0.15);border-radius:2px;padding:4px 9px;white-space:nowrap;align-self:center;}
   .rcb h3{font-size:14px;font-weight:500;color:var(--text);margin-bottom:3px;}
   .rcb p{font-size:12px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
@@ -142,12 +175,12 @@
   .stup button{background:none;border:1px solid var(--border);border-radius:2px;padding:3px 9px;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;color:var(--text3);transition:all 0.15s;}
   .stup button:hover{border-color:var(--adm);color:var(--adm);}
 
-  /* TRACK */
+  /* ─── TRACK ────────────────────────────────────────────── */
   .tbox{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:26px;max-width:420px;display:flex;flex-direction:column;gap:15px;}
   .tres{display:none;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:20px;margin-top:16px;flex-direction:column;gap:12px;}
   .tres.show{display:flex;}
 
-  /* ADMIN STATS */
+  /* ─── ADMIN STATS ──────────────────────────────────────── */
   .srow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:26px;}
   .scard{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:15px 17px;}
   .scard .sl{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:7px;}
@@ -156,8 +189,41 @@
   .scard.snew .sv{color:var(--accent);}
   .scard.srev .sv{color:var(--warn);}
   .scard.sres .sv{color:var(--text3);}
+  .scard.shigh .sv{color:var(--danger);}
 
-  /* ADMIN NOTE */
+  /* ─── TOP MANAGEMENT ANALYTICS ─────────────────────────── */
+  .tm-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;}
+  .tm-panel{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:20px;}
+  .tm-panel-title{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .tm-panel-title::before{content:'';display:block;width:10px;height:1px;background:var(--tm);}
+  .bar-row{display:flex;flex-direction:column;gap:10px;}
+  .bar-item{display:flex;flex-direction:column;gap:5px;}
+  .bar-label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--text2);}
+  .bar-label span:last-child{color:var(--tm);}
+  .bar-track{background:var(--bg);border-radius:2px;height:5px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--tm2),var(--tm));transition:width 0.6s ease;}
+  .bar-fill.green{background:linear-gradient(90deg,var(--accent2),var(--accent));}
+  .bar-fill.warn{background:linear-gradient(90deg,#cc8800,var(--warn));}
+  .bar-fill.danger{background:linear-gradient(90deg,#cc2244,var(--danger));}
+  .sev-split{display:flex;gap:12px;}
+  .sev-box{flex:1;background:var(--bg);border-radius:3px;padding:14px 10px;text-align:center;border:1px solid var(--border);}
+  .sev-box .sv2{font-family:var(--mono);font-size:22px;font-weight:600;margin-bottom:4px;}
+  .sev-box .sl2{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;}
+  .sev-box.low .sv2{color:#00c8a0;}
+  .sev-box.medium .sv2{color:var(--warn);}
+  .sev-box.high .sv2{color:var(--danger);}
+  .trend-bars{display:flex;align-items:flex-end;gap:6px;height:80px;}
+  .trend-bar-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}
+  .trend-bar{width:100%;background:rgba(176,111,255,0.15);border-radius:2px 2px 0 0;border:1px solid rgba(176,111,255,0.3);transition:background 0.15s;min-height:4px;}
+  .trend-bar:hover{background:rgba(176,111,255,0.35);}
+  .trend-label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;}
+  .recent-ro .rcard{cursor:default;}
+  .notice-tm{background:rgba(176,111,255,0.04);border:1px solid rgba(176,111,255,0.14);border-radius:3px;padding:12px 15px;display:flex;gap:11px;align-items:flex-start;margin-bottom:22px;}
+  .notice-tm .ic{color:var(--tm);font-size:14px;flex-shrink:0;}
+  .notice-tm p{font-size:12px;color:var(--text2);line-height:1.6;font-family:var(--mono);}
+  .notice-tm p strong{color:var(--tm);}
+
+  /* ─── ADMIN NOTE ───────────────────────────────────────── */
   .nota{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 12px;color:var(--text2);font-family:var(--mono);font-size:12px;width:100%;outline:none;resize:vertical;min-height:70px;transition:border-color 0.2s;}
   .nota:focus{border-color:var(--adm);}
   .notebtn{background:var(--adm);color:#fff;border:none;border-radius:3px;padding:7px 15px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:background 0.15s;}
@@ -165,9 +231,9 @@
   .delbtn{background:none;border:1px solid rgba(255,77,106,0.3);border-radius:3px;padding:7px 13px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;cursor:pointer;color:var(--danger);transition:all 0.15s;}
   .delbtn:hover{background:rgba(255,77,106,0.08);border-color:var(--danger);}
 
-  /* MODAL */
-  #detailModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:300;align-items:center;justify-content:center;padding:22px;}
-  #detailModal.open{display:flex;}
+  /* ─── MODAL ────────────────────────────────────────────── */
+  #detailModal,#pwModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:300;align-items:center;justify-content:center;padding:22px;}
+  #detailModal.open,#pwModal.open{display:flex;}
   .mbox{background:var(--surface2);border:1px solid var(--border2);border-radius:5px;width:100%;max-width:580px;max-height:82vh;overflow-y:auto;padding:26px;display:flex;flex-direction:column;gap:17px;}
   .mbox h2{font-family:var(--mono);font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:var(--adm);}
   .mrow{display:grid;grid-template-columns:100px 1fr;gap:10px;border-top:1px solid var(--border);padding-top:13px;font-size:13px;}
@@ -176,7 +242,16 @@
   .mclose{background:none;border:1px solid var(--border2);border-radius:3px;padding:7px 15px;color:var(--text2);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;cursor:pointer;align-self:flex-end;transition:all 0.15s;}
   .mclose:hover{border-color:var(--danger);color:var(--danger);}
 
-  /* QR CODE PAGE */
+  /* ─── PASSWORD MODAL ───────────────────────────────────── */
+  .pw-box{background:var(--surface2);border:1px solid var(--border2);border-radius:5px;width:100%;max-width:400px;padding:26px;display:flex;flex-direction:column;gap:16px;}
+  .pw-box h2{font-family:var(--mono);font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sa);padding-bottom:12px;border-bottom:1px solid var(--border);}
+  .pw-box label{font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:5px;}
+  .pw-box input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:9px 13px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;}
+  .pw-box input:focus{border-color:var(--sa);}
+  .pw-err{font-family:var(--mono);font-size:10px;color:var(--danger);display:none;}
+  .pw-ok{font-family:var(--mono);font-size:10px;color:var(--accent);display:none;}
+
+  /* ─── QR CODE ──────────────────────────────────────────── */
   .qr-wrap{display:flex;flex-direction:column;gap:22px;}
   .qr-card{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:28px;display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;}
   .qr-canvas-wrap{background:#fff;border-radius:4px;padding:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -193,32 +268,86 @@
   .qr-url{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:9px 13px;font-family:var(--mono);font-size:11px;color:var(--accent);word-break:break-all;}
   .qr-tip{background:rgba(123,140,255,0.05);border:1px solid rgba(123,140,255,0.15);border-radius:3px;padding:13px 16px;font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.8;}
   .qr-tip strong{color:var(--adm);}
+  .qr-warn{display:none;background:rgba(255,170,0,0.06);border:1px solid rgba(255,170,0,0.18);border-radius:3px;padding:13px 16px;font-family:var(--mono);font-size:11px;color:var(--warn);line-height:1.8;}
+  .qr-warn.show{display:block;}
 
-  /* PRINT */
+  /* ─── CATEGORY MANAGEMENT ──────────────────────────────── */
+  .cat-list{display:flex;flex-direction:column;gap:7px;margin-bottom:24px;}
+  .cat-item{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .cat-item .cat-name{font-family:var(--mono);font-size:13px;color:var(--text);}
+  .cat-item .cat-tag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:2px;background:rgba(245,197,66,0.08);color:var(--sa);border:1px solid rgba(245,197,66,0.2);}
+  .cat-item .cat-del{background:none;border:1px solid rgba(255,77,106,0.25);border-radius:2px;padding:4px 10px;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;color:var(--danger);transition:all 0.15s;}
+  .cat-item .cat-del:hover{background:rgba(255,77,106,0.08);border-color:var(--danger);}
+  .cat-add-row{display:flex;gap:10px;align-items:center;}
+  .cat-add-row input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;}
+  .cat-add-row input:focus{border-color:var(--sa);}
+  .section-sep{border:none;border-top:1px solid var(--border);margin:28px 0;}
+  .sec-label{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;}
+
+  /* ─── USER MANAGEMENT ──────────────────────────────────── */
+  .user-list{display:flex;flex-direction:column;gap:8px;margin-bottom:28px;}
+  .user-item{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:14px 18px;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;}
+  .user-info .un{font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:3px;}
+  .user-info .ud{font-family:var(--mono);font-size:10px;color:var(--text3);}
+  .role-tag{font-family:var(--mono);font-size:9px;padding:3px 9px;border-radius:2px;border:1px solid;text-transform:uppercase;letter-spacing:0.06em;}
+  .role-tag.superadmin{color:var(--sa);border-color:rgba(245,197,66,0.3);background:rgba(245,197,66,0.06);}
+  .role-tag.admin{color:var(--adm);border-color:rgba(123,140,255,0.3);background:rgba(123,140,255,0.06);}
+  .role-tag.topmanagement{color:var(--tm);border-color:rgba(176,111,255,0.3);background:rgba(176,111,255,0.06);}
+  .user-actions{display:flex;gap:6px;}
+  .user-actions button{background:none;border:1px solid var(--border);border-radius:2px;padding:5px 11px;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;color:var(--text3);transition:all 0.15s;}
+  .user-actions .rpw-btn:hover{border-color:var(--sa);color:var(--sa);}
+  .user-actions .del-btn:hover{border-color:var(--danger);color:var(--danger);}
+  .add-user-panel{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:22px;display:flex;flex-direction:column;gap:16px;}
+  .add-user-panel .au-title{font-family:var(--mono);font-size:11px;color:var(--sa);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:2px;}
+  .add-user-panel input,.add-user-panel select{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:9px 13px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;width:100%;}
+  .add-user-panel input:focus,.add-user-panel select:focus{border-color:var(--sa);}
+  .add-user-panel select{appearance:none;cursor:pointer;}
+  .add-user-panel label{font-family:var(--mono);font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;}
+  .au-err{font-family:var(--mono);font-size:10px;color:var(--danger);display:none;}
+  .au-ok{font-family:var(--mono);font-size:10px;color:var(--accent);display:none;}
+
+  /* ─── FILTERS ──────────────────────────────────────────── */
+  .frow2{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .fsel{background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text2);font-family:var(--mono);font-size:11px;padding:6px 11px;outline:none;cursor:pointer;}
+
+  /* ─── MISC ─────────────────────────────────────────────── */
+  .empty{text-align:center;padding:56px 0;color:var(--text3);font-family:var(--mono);font-size:12px;letter-spacing:0.05em;}
+  .empty .ei{font-size:30px;margin-bottom:11px;opacity:0.35;}
+  ::-webkit-scrollbar{width:4px;}
+  ::-webkit-scrollbar-track{background:var(--bg);}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+
+  /* ─── PRINT ─────────────────────────────────────────────── */
+  /* ─── FIREBASE STATUS BANNER ─────────────────────────── */
+  #fb-status{display:none;padding:6px 26px;font-family:var(--mono);font-size:10px;text-align:center;letter-spacing:0.06em;}
+  #fb-status.local{background:rgba(255,170,0,0.06);border-bottom:1px solid rgba(255,170,0,0.15);color:var(--warn);}
+  #fb-status.cloud{background:rgba(0,229,160,0.04);border-bottom:1px solid rgba(0,229,160,0.1);color:var(--accent);}
+  #fb-rules-tip{display:none;background:rgba(255,170,0,0.06);border:1px solid rgba(255,170,0,0.2);border-radius:4px;margin:12px 24px;padding:12px 16px;font-family:var(--mono);font-size:10px;color:var(--warn);line-height:1.9;}
+  #fb-rules-tip code{background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:2px;}
+
   @media print {
     body{background:#fff !important;}
     body::before,header,#roleScreen,#loginScreen,.qr-actions,.qr-tip{display:none !important;}
     .page{display:block !important;padding:0 !important;}
     .ptitle{display:none;}
     .qr-card{background:#fff !important;border:1px solid #ccc !important;}
-    .qr-info h2{color:#222 !important;}
-    .qr-info p,.qr-info ul li{color:#444 !important;}
   }
 
-  /* MISC */
-  .empty{text-align:center;padding:56px 0;color:var(--text3);font-family:var(--mono);font-size:12px;letter-spacing:0.05em;}
-  .empty .ei{font-size:30px;margin-bottom:11px;opacity:0.35;}
-  .frow2{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
-  .fsel{background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text2);font-family:var(--mono);font-size:11px;padding:6px 11px;outline:none;cursor:pointer;}
-  ::-webkit-scrollbar{width:4px;}
-  ::-webkit-scrollbar-track{background:var(--bg);}
-  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
-  @media(max-width:600px){.frow{grid-template-columns:1fr}.hnav{display:none}.srow{grid-template-columns:1fr 1fr}.page{padding:18px 13px}.rs-cards{flex-direction:column}}
+  @media(max-width:640px){
+    .frow{grid-template-columns:1fr}
+    .hnav{display:none}
+    .srow{grid-template-columns:1fr 1fr}
+    .page{padding:18px 13px}
+    .rs-cards{flex-direction:column}
+    .tm-grid{grid-template-columns:1fr}
+    .user-item{grid-template-columns:1fr;gap:8px}
+    .sev-split{flex-direction:column}
+  }
 </style>
 </head>
 <body>
 
-<!-- ROLE SELECT -->
+<!-- ═══════════════ ROLE SELECT ═══════════════ -->
 <div id="roleScreen">
   <div class="rs-logo">
     <svg viewBox="0 0 58 58" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -237,28 +366,36 @@
     </div>
     <div class="rs-card ac" onclick="goLogin()">
       <div class="rci">&#128737;</div>
-      <h2>Admin</h2>
-      <p>Review, manage &amp; action all reports</p>
+      <h2>Staff Access</h2>
+      <p>Admin · SuperAdmin · Top Management</p>
     </div>
   </div>
 </div>
 
-<!-- ADMIN LOGIN ONLY -->
+<!-- ═══════════════ LOGIN ═══════════════ -->
 <div id="loginScreen">
   <div class="login-back" onclick="goBack()">&#8592; Back</div>
   <div class="login-box">
-    <div class="ltitle">Admin Access</div>
+    <div class="ltitle">&#128737; Staff Login</div>
     <div>
-      <label>Admin Passphrase</label>
-      <input type="password" id="lpass" placeholder="Enter passphrase..." autocomplete="off" />
+      <label>Username</label>
+      <input type="text" id="luser" placeholder="Enter username..." autocomplete="off" />
     </div>
-    <button class="btn-a" onclick="doLogin()">Enter Admin Panel</button>
-    <div class="lhint">Admin passphrase: <span class="ha">admin123</span></div>
-    <div class="lerr" id="lerr">Incorrect passphrase. Access denied.</div>
+    <div>
+      <label>Password</label>
+      <input type="password" id="lpass" placeholder="Enter password..." autocomplete="off" />
+    </div>
+    <button class="btn-a" onclick="doLogin()">&#9654; Sign In</button>
+    <div class="lhint">Roles available:&nbsp;
+      <span class="rpill sa">SuperAdmin</span>&nbsp;
+      <span class="rpill adm">Admin</span>&nbsp;
+      <span class="rpill tm">Top Mgmt</span>
+    </div>
+    <div class="lerr" id="lerr">Invalid username or password. Access denied.</div>
   </div>
 </div>
 
-<!-- APP -->
+<!-- ═══════════════ APP ═══════════════ -->
 <div id="app">
   <header>
     <div class="hb">
@@ -271,8 +408,15 @@
       <button class="lkbtn" id="lockBtn" onclick="lockApp()" style="display:none;">Lock</button>
     </div>
   </header>
+  <div id="fb-status"></div>
+  <div id="fb-rules-tip">
+    <strong>⚠ FIRESTORE RULES FIX REQUIRED</strong> — Reports submit locally but cannot sync to other devices until you update Firestore Rules.<br>
+    <strong>Step 1:</strong> Open <a href="https://console.firebase.google.com/project/gaunesh-94e92/firestore/rules" target="_blank" style="color:var(--warn)">Firebase Console → Firestore → Rules</a><br>
+    <strong>Step 2:</strong> Replace the rules with: <code>rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { match /{document=**} { allow read, write: if true; } } }</code><br>
+    <strong>Step 3:</strong> Click Publish. Reports will auto-sync immediately.
+  </div>
 
-  <!-- REPORTER: Submit -->
+  <!-- ── REPORTER: Submit ────────────────────── -->
   <div class="page active" id="page-submit">
     <div class="ptitle u">Submit Confidential Report</div>
     <div class="anotice">
@@ -283,16 +427,7 @@
       <div class="frow">
         <div class="field">
           <label>Category *</label>
-          <select id="f-cat">
-            <option value="">Select category...</option>
-            <option>Workplace Misconduct</option>
-            <option>Financial Fraud / Corruption</option>
-            <option>Safety Violation</option>
-            <option>Discrimination / Harassment</option>
-            <option>Data Privacy Breach</option>
-            <option>Environmental Violation</option>
-            <option>Other</option>
-          </select>
+          <select id="f-cat"><option value="">Select category...</option></select>
         </div>
         <div class="field">
           <label>Organization / Dept (optional)</label>
@@ -328,20 +463,25 @@
       </div>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
         <button class="sbtn" onclick="submitReport()">&#9654; Submit Report</button>
-        <span style="font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;">Stored securely on this device</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;">Stored securely</span>
       </div>
     </div>
     <div id="sc">
       <div style="font-size:42px;">&#10003;</div>
-      <h2>Report Submitted Successfully</h2>
-      <p>Your report has been recorded. Save the Report ID below — use it to check your report status anonymously at any time.</p>
+      <h2 id="submitSuccessTitle">Report Submitted Successfully</h2>
+      <p id="submitSuccessMessage">Your report has been recorded. Save the Report ID below and use it to check your report status anonymously at any time.</p>
+      <div id="submitSyncStatus" class="sync-note"></div>
       <div class="rid" id="sid">RPT-000000</div>
+      <button onclick="copyReportId()" style="background:none;border:1px solid rgba(0,229,160,0.3);border-radius:3px;padding:6px 16px;color:var(--accent);font-family:var(--mono);font-size:10px;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;" id="copyBtn">&#128203; Copy ID</button>
       <p style="font-size:11px;color:var(--text3);">&#9888; Save this ID — it cannot be recovered if lost</p>
-      <button class="sbtn" onclick="resetForm()" style="margin-top:4px;">Submit Another Report</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:4px;">
+        <button class="sbtn" onclick="goToTrackWithId()">&#128269; Track This Report</button>
+        <button class="sbtn" style="background:var(--surface);color:var(--text2);border:1px solid var(--border2);" onclick="resetForm()">Submit Another</button>
+      </div>
     </div>
   </div>
 
-  <!-- REPORTER: Track -->
+  <!-- ── REPORTER: Track ────────────────────── -->
   <div class="page" id="page-track">
     <div class="ptitle u">Track Your Report</div>
     <div class="anotice">
@@ -361,7 +501,7 @@
     </div>
   </div>
 
-  <!-- ADMIN: Dashboard -->
+  <!-- ── ADMIN / SUPERADMIN: Dashboard ─────── -->
   <div class="page" id="page-dashboard">
     <div class="ptitle a">Admin Dashboard</div>
     <div class="srow" id="srow"></div>
@@ -369,7 +509,7 @@
     <div class="rgrid" id="dashGrid"></div>
   </div>
 
-  <!-- ADMIN: All Reports -->
+  <!-- ── ADMIN / SUPERADMIN: All Reports ───── -->
   <div class="page" id="page-allreports">
     <div class="frow2">
       <div class="ptitle a" style="margin:0;">All Reports</div>
@@ -388,27 +528,18 @@
         </select>
         <select class="fsel" id="fcat" onchange="renderAll()">
           <option value="">All Categories</option>
-          <option>Workplace Misconduct</option>
-          <option>Financial Fraud / Corruption</option>
-          <option>Safety Violation</option>
-          <option>Discrimination / Harassment</option>
-          <option>Data Privacy Breach</option>
-          <option>Environmental Violation</option>
-          <option>Other</option>
         </select>
       </div>
     </div>
     <div class="rgrid" id="allGrid"></div>
   </div>
 
-  <!-- ADMIN: QR Code -->
+  <!-- ── ADMIN / SUPERADMIN: QR Code ──────── -->
   <div class="page" id="page-qrcode">
     <div class="ptitle a">QR Code — Premises Poster</div>
     <div class="qr-wrap">
       <div class="qr-card">
-        <div class="qr-canvas-wrap">
-          <div id="qrcode"></div>
-        </div>
+        <div class="qr-canvas-wrap"><div id="qrcode"></div></div>
         <div class="qr-info">
           <h2>&#128247; Scan to Report Anonymously</h2>
           <p>Print and paste this QR code throughout your premises. Anyone who scans it is taken <strong>directly to the anonymous report form</strong> — no password, no login required.</p>
@@ -428,309 +559,1398 @@
       <div class="qr-tip">
         <strong>&#128204; Placement tips:</strong> Paste near notice boards, canteen, restroom entrances, HR area, stairwells, and entry gates. The more visible the QR, the safer employees feel reporting issues.
       </div>
+      <div class="qr-warn" id="qrModeWarning"></div>
       <div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:7px;">QR Code encodes this URL:</div>
         <div class="qr-url" id="qrUrlDisplay">—</div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- DETAIL MODAL -->
+  <!-- ── TOP MANAGEMENT: Analytics Dashboard ─ -->
+  <div class="page" id="page-topmgmt">
+    <div class="ptitle tm">Top Management Dashboard</div>
+    <div class="notice-tm">
+      <span class="ic">&#128202;</span>
+      <p><strong>Read-only analytics view.</strong> This dashboard provides a real-time overview of all reports. No edits or deletions can be made from this view.</p>
+    </div>
+    <div class="srow" id="tm-srow"></div>
+    <div class="tm-grid">
+      <div class="tm-panel">
+        <div class="tm-panel-title">Reports by Category</div>
+        <div class="bar-row" id="tm-catbars"></div>
+      </div>
+      <div class="tm-panel">
+        <div class="tm-panel-title">Severity Breakdown</div>
+        <div class="sev-split" id="tm-sevbox"></div>
+        <div style="margin-top:20px;">
+          <div class="tm-panel-title" style="margin-top:0;">Status Overview</div>
+          <div class="bar-row" id="tm-stbars"></div>
+        </div>
+      </div>
+      <div class="tm-panel">
+        <div class="tm-panel-title">Weekly Trend (Last 8 weeks)</div>
+        <div class="trend-bars" id="tm-trend"></div>
+      </div>
+      <div class="tm-panel">
+        <div class="tm-panel-title">Resolution Rate</div>
+        <div id="tm-resrate" style="display:flex;flex-direction:column;gap:12px;"></div>
+      </div>
+    </div>
+    <div style="margin-top:26px;">
+      <div class="ptitle tm" style="margin-bottom:14px;">Recent Reports (Read-Only)</div>
+      <div class="rgrid recent-ro" id="tm-recentgrid"></div>
+    </div>
+  </div>
+
+  <!-- ── SUPERADMIN: Analytics Dashboard ──── -->
+  <div class="page" id="page-saanalytics">
+    <div class="ptitle sa">Analytics Overview</div>
+    <div style="background:rgba(245,197,66,0.04);border:1px solid rgba(245,197,66,0.14);border-radius:3px;padding:12px 15px;display:flex;gap:11px;align-items:flex-start;margin-bottom:22px;">
+      <span style="color:var(--sa);font-size:14px;">&#9670;</span>
+      <p style="font-size:12px;color:var(--text2);line-height:1.6;font-family:var(--mono);">Full-system analytics across all reports, categories, and users. <strong style="color:var(--sa);">SuperAdmin view — all actions remain available from other tabs.</strong></p>
+    </div>
+    <div class="srow" id="sa-srow"></div>
+    <div class="tm-grid">
+      <div class="tm-panel" style="border-color:rgba(245,197,66,0.15);">
+        <div class="tm-panel-title" style="--tm:var(--sa);">Reports by Category</div>
+        <div class="bar-row" id="sa-catbars"></div>
+      </div>
+      <div class="tm-panel" style="border-color:rgba(245,197,66,0.15);">
+        <div class="tm-panel-title" style="--tm:var(--sa);">Severity Breakdown</div>
+        <div class="sev-split" id="sa-sevbox"></div>
+        <div style="margin-top:20px;">
+          <div class="tm-panel-title" style="--tm:var(--sa);margin-top:0;">Status Overview</div>
+          <div class="bar-row" id="sa-stbars"></div>
+        </div>
+      </div>
+      <div class="tm-panel" style="border-color:rgba(245,197,66,0.15);">
+        <div class="tm-panel-title" style="--tm:var(--sa);">Weekly Trend (Last 8 weeks)</div>
+        <div class="trend-bars" id="sa-trend"></div>
+      </div>
+      <div class="tm-panel" style="border-color:rgba(245,197,66,0.15);">
+        <div class="tm-panel-title" style="--tm:var(--sa);">Resolution Rate &amp; System Stats</div>
+        <div id="sa-resrate" style="display:flex;flex-direction:column;gap:12px;"></div>
+      </div>
+    </div>
+    <div style="margin-top:26px;">
+      <div class="ptitle sa" style="margin-bottom:14px;">Recent Reports</div>
+      <div class="rgrid" id="sa-recentgrid"></div>
+    </div>
+  </div>
+
+  <!-- ── SUPERADMIN: Category Management ───── -->
+  <div class="page" id="page-categories">
+    <div class="ptitle sa">Category Management</div>
+    <div style="background:rgba(245,197,66,0.04);border:1px solid rgba(245,197,66,0.14);border-radius:3px;padding:12px 15px;display:flex;gap:11px;align-items:flex-start;margin-bottom:26px;">
+      <span style="color:var(--sa);font-size:14px;">&#9670;</span>
+      <p style="font-size:12px;color:var(--text2);line-height:1.6;font-family:var(--mono);">Categories are available in the reporter submission form and all report filters. <strong style="color:var(--sa);">Changes apply immediately.</strong> Default categories cannot be deleted.</p>
+    </div>
+    <div class="sec-label">Active Categories</div>
+    <div class="cat-list" id="catList"></div>
+    <hr class="section-sep">
+    <div class="sec-label">Add New Category</div>
+    <div class="cat-add-row">
+      <input type="text" id="newCatInput" placeholder="e.g. IT Security Incident" maxlength="60" />
+      <button class="sbtn sa-btn" onclick="addCategory()">&#43; Add</button>
+    </div>
+    <div id="cat-msg" style="font-family:var(--mono);font-size:10px;margin-top:8px;display:none;"></div>
+  </div>
+
+  <!-- ── SUPERADMIN: User Management ───────── -->
+  <div class="page" id="page-users">
+    <div class="ptitle sa">User Management</div>
+    <div style="background:rgba(245,197,66,0.04);border:1px solid rgba(245,197,66,0.14);border-radius:3px;padding:12px 15px;display:flex;gap:11px;align-items:flex-start;margin-bottom:26px;">
+      <span style="color:var(--sa);font-size:14px;">&#9670;</span>
+      <p style="font-size:12px;color:var(--text2);line-height:1.6;font-family:var(--mono);">Only SuperAdmin can create or remove user accounts. <strong style="color:var(--sa);">The superadmin account cannot be deleted.</strong></p>
+    </div>
+    <div class="sec-label">All Staff Accounts</div>
+    <div class="user-list" id="userList"></div>
+    <hr class="section-sep">
+    <div class="add-user-panel">
+      <div class="au-title">&#43; Create New User Account</div>
+      <div class="frow">
+        <div>
+          <label>Full Name</label>
+          <input type="text" id="au-name" placeholder="e.g. Ravi Sharma" />
+        </div>
+        <div>
+          <label>Username</label>
+          <input type="text" id="au-user" placeholder="e.g. ravi.sharma" autocomplete="off" />
+        </div>
+      </div>
+      <div class="frow">
+        <div>
+          <label>Password</label>
+          <input type="password" id="au-pass" placeholder="Minimum 6 characters" autocomplete="new-password" />
+        </div>
+        <div>
+          <label>Role</label>
+          <select id="au-role">
+            <option value="">Select role...</option>
+            <option value="admin">Admin</option>
+            <option value="topmanagement">Top Management</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <button class="sbtn sa-btn" onclick="addUser()">&#43; Create Account</button>
+        <div class="au-err" id="au-err"></div>
+        <div class="au-ok" id="au-ok"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUPERADMIN / TOP MGMT: Change Password ─ -->
+  <div class="page" id="page-changepassword">
+    <div class="ptitle sa" id="cp-ptitle">Change Password</div>
+    <div id="cp-target-info" style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:22px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:3px;"></div>
+    <div style="max-width:420px;display:flex;flex-direction:column;gap:16px;" id="cpForm">
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;">Current Password</label>
+        <input type="password" id="cp-old" placeholder="Enter current password" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;" />
+      </div>
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;">New Password</label>
+        <input type="password" id="cp-new" placeholder="Minimum 6 characters" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;" />
+      </div>
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;">Confirm New Password</label>
+        <input type="password" id="cp-confirm" placeholder="Repeat new password" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;" />
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button class="sbtn sa-btn" onclick="changePassword()">&#128274; Update Password</button>
+        <div id="cp-err" style="font-family:var(--mono);font-size:10px;color:var(--danger);display:none;"></div>
+        <div id="cp-ok" style="font-family:var(--mono);font-size:10px;color:var(--accent);display:none;">&#10003; Password updated successfully</div>
+      </div>
+    </div>
+
+    <!-- SuperAdmin: reset another user's password -->
+    <div id="cp-resetOther" style="display:none;margin-top:36px;">
+      <hr class="section-sep" style="margin-top:0;">
+      <div class="sec-label">Reset Another User's Password</div>
+      <div style="max-width:420px;display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;">Select User</label>
+          <select id="cp-target-user" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;appearance:none;cursor:pointer;"></select>
+        </div>
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--text2);letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:6px;">New Password for User</label>
+          <input type="password" id="cp-other-new" placeholder="Minimum 6 characters" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;" />
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <button class="sbtn sa-btn" onclick="resetOtherPassword()">&#128260; Reset User Password</button>
+          <div id="cp-other-msg" style="font-family:var(--mono);font-size:10px;display:none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- end #app -->
+
+<!-- ═══════════════ DETAIL MODAL ═══════════════ -->
 <div id="detailModal">
   <div class="mbox" id="mbox"></div>
 </div>
 
-<script>
-  const ADMIN_PASS = 'admin123';
-  let role = null;
-  let reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
-  let selSevVal = '';
-  let files = [];
-  let qrGenerated = false;
+<!-- ═══════════════ PW RESET MODAL (from user list) ═══════════════ -->
+<div id="pwModal">
+  <div class="pw-box">
+    <h2>&#128274; Reset Password</h2>
+    <div id="pw-username-display" style="font-family:var(--mono);font-size:11px;color:var(--text2);"></div>
+    <div>
+      <label>New Password</label>
+      <input type="password" id="pw-new1" placeholder="Minimum 6 characters" />
+    </div>
+    <div>
+      <label>Confirm Password</label>
+      <input type="password" id="pw-new2" placeholder="Repeat password" />
+    </div>
+    <div class="pw-err" id="pw-err">Passwords do not match or too short.</div>
+    <div class="pw-ok" id="pw-ok">&#10003; Password reset successfully.</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px;">
+      <button class="mclose" onclick="closePwModal()">Cancel</button>
+      <button class="sbtn sa-btn" style="padding:8px 18px;font-size:11px;" onclick="confirmPwReset()">Reset</button>
+    </div>
+  </div>
+</div>
 
-  // Auto-enter reporter if coming from QR scan (?report=true)
-  window.addEventListener('DOMContentLoaded', () => {
-    const params = new URLSearchParams(window.location.search);
-    if(params.get('report') === 'true') {
-      enterReporter();
+<script>
+// ══════════════════════════════════════════════════════════
+//  FIREBASE CONFIG
+// ══════════════════════════════════════════════════════════
+const _fbConfig = {
+  apiKey:            "AIzaSyDNpMRkkidbbRz7IVQMNl7IZQnYSAIVn1s",
+  authDomain:        "gaunesh-94e92.firebaseapp.com",
+  projectId:         "gaunesh-94e92",
+  storageBucket:     "gaunesh-94e92.firebasestorage.app",
+  messagingSenderId: "111112760525",
+  appId:             "1:111112760525:web:006715ae6905cd939fcd84",
+  measurementId:     "G-RBTZMVG1E4"
+};
+let _db = null, _fbReady = false, _unsubscribe = null;
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(_fbConfig);
+    _db = firebase.firestore();
+    _db.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn('Persistence:',e.code));
+    _fbReady = true;
+    console.log('Firebase connected ✓');
+    setTimeout(flushPendingQueue, 2000); // retry any pending local reports
+  } catch(e) {
+    console.warn('Firebase init failed, using local storage:', e);
+    _fbReady = false; _db = null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  DEFAULT DATA
+// ══════════════════════════════════════════════════════════
+const DEFAULT_CATEGORIES = [
+  'Workplace Misconduct',
+  'Financial Fraud / Corruption',
+  'Safety Violation',
+  'Discrimination / Harassment',
+  'Data Privacy Breach',
+  'Environmental Violation',
+  'Other'
+];
+
+const DEFAULT_USERS = [
+  { username:'superadmin', password:'super123', role:'superadmin', name:'Super Admin', createdBy:'system' },
+  { username:'admin',      password:'admin123', role:'admin',       name:'Admin User',  createdBy:'system' }
+];
+
+// ══════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════
+let role = null;
+let currentUser = null;
+let reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+let selSevVal = '';
+let files = [];
+let qrGenerated = false;
+
+function getUsers() {
+  const raw = localStorage.getItem('wb_users');
+  if (!raw) { localStorage.setItem('wb_users', JSON.stringify(DEFAULT_USERS)); return DEFAULT_USERS; }
+  return JSON.parse(raw);
+}
+function saveUsers(users) { localStorage.setItem('wb_users', JSON.stringify(users)); }
+
+function getCategories() {
+  const raw = localStorage.getItem('wb_categories');
+  if (!raw) { localStorage.setItem('wb_categories', JSON.stringify(DEFAULT_CATEGORIES)); return DEFAULT_CATEGORIES; }
+  return JSON.parse(raw);
+}
+function saveCategories(cats) { localStorage.setItem('wb_categories', JSON.stringify(cats)); }
+
+// ══════════════════════════════════════════════════════════
+//  FIREBASE HELPERS
+// ══════════════════════════════════════════════════════════
+// ── Pending sync queue ─────────────────────────────────────────────────
+function getPendingQueue() { return JSON.parse(localStorage.getItem('wb_pending_sync')||'[]'); }
+function savePendingQueue(q) { localStorage.setItem('wb_pending_sync', JSON.stringify(q)); }
+function addToPendingQueue(reportId) {
+  const q = getPendingQueue();
+  if (!q.includes(reportId)) { q.push(reportId); savePendingQueue(q); }
+}
+function removeFromPendingQueue(reportId) {
+  savePendingQueue(getPendingQueue().filter(id => id !== reportId));
+}
+async function flushPendingQueue() {
+  if (!_fbReady || !_db) return;
+  const q = getPendingQueue();
+  if (!q.length) return;
+  const localReports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+  for (const id of [...q]) {
+    const r = localReports.find(x => x.id === id);
+    if (!r) { removeFromPendingQueue(id); continue; }
+    try {
+      await _db.collection('wb_reports').doc(r.id).set(r);
+      removeFromPendingQueue(id);
+      console.log('[Sync] Flushed pending report:', id);
+    } catch(e) {
+      console.warn('[Sync] Retry failed for', id, e.message);
+    }
+  }
+}
+
+async function saveReport(report) {
+  const idx = reports.findIndex(r => r.id === report.id);
+  if (idx >= 0) reports[idx] = report; else reports.push(report);
+  localStorage.setItem('wb_reports', JSON.stringify(reports));
+  const result = { savedLocally: true, syncedToCloud: false, localOnlyReason: '' };
+  if (_fbReady && _db) {
+    try {
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+      await Promise.race([
+        _db.collection('wb_reports').doc(report.id).set(report),
+        timeout
+      ]);
+      result.syncedToCloud = true;
+      removeFromPendingQueue(report.id);
+    } catch(e) {
+      if (e.code === 'permission-denied') {
+        result.localOnlyReason = 'Firestore permission denied. Open Firebase Console → Firestore → Rules and set allow read, write: if true; then reports will auto-sync.';
+      } else {
+        result.localOnlyReason = 'Firestore write failed (saved locally — will retry): ' + (e.message || e);
+      }
+      addToPendingQueue(report.id);
+      console.warn('[saveReport]', result.localOnlyReason);
+    }
+  } else {
+    result.localOnlyReason = 'Firestore not initialised. Report saved locally and will auto-sync when connection is restored.';
+    addToPendingQueue(report.id);
+  }
+  return result;
+}
+
+async function deleteReportById(id) {
+  reports = reports.filter(r => r.id !== id);
+  localStorage.setItem('wb_reports', JSON.stringify(reports));
+  if(_fbReady && _db) {
+    try { await _db.collection('wb_reports').doc(id).delete(); }
+    catch(e) {
+      if (e.code === 'permission-denied') {
+        console.warn('Firestore delete permission denied — deleted locally only.');
+      } else {
+        console.warn('Firestore delete failed:', e);
+      }
+    }
+  }
+}
+
+function subscribeReports(onUpdate) {
+  if(!_fbReady || !_db) return;
+  if(_unsubscribe) _unsubscribe();
+  _unsubscribe = _db.collection('wb_reports').orderBy('date', 'desc')
+    .onSnapshot(snap => {
+      const fbReports = snap.docs.map(d => d.data());
+      // Merge: keep local-only reports that haven't synced to Firestore yet
+      const localData = JSON.parse(localStorage.getItem('wb_reports') || '[]');
+      const merged = [...fbReports];
+      localData.forEach(lr => {
+        if (!merged.find(fr => fr.id === lr.id)) merged.push(lr);
+      });
+      reports = merged.sort((a, b) => new Date(b.date) - new Date(a.date));
+      localStorage.setItem('wb_reports', JSON.stringify(reports));
+      // Update banner
+      const fbBanner = document.getElementById('fb-status');
+      if (fbBanner) {
+        fbBanner.className = 'cloud';
+        fbBanner.textContent = '☁ Cloud sync active — Firestore connected (live)';
+        fbBanner.style.display = 'block';
+      }
+      flushPendingQueue(); // auto-sync any locally-saved reports
+      if(onUpdate) onUpdate();
+    }, err => {
+      console.warn('Firestore snapshot error:', err);
+      // On permission error, fall back gracefully
+      if (err.code === 'permission-denied') {
+        const fbBanner = document.getElementById('fb-status');
+        if (fbBanner) {
+          fbBanner.className = 'local';
+          fbBanner.textContent = '⚠ Firestore permission denied — reports saving locally only. Fix: Firebase Console → Firestore → Rules → set: allow read, write: if true; (dev) or proper auth rules (prod). Pending reports will auto-sync once fixed.';
+          fbBanner.style.display = 'block';
+        }
+      }
+      reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+      if(onUpdate) onUpdate();
+    });
+}
+
+async function loadReports() {
+  // Always start with local cache for instant display
+  const localData = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+  reports = localData;
+  if (!_fbReady || !_db) return;
+  try {
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 7000));
+    const snap = await Promise.race([
+      _db.collection('wb_reports').orderBy('date', 'desc').get(),
+      timeout
+    ]);
+    const fbReports = snap.docs.map(d => d.data());
+    // Merge: start with Firestore data, then add any local-only reports
+    // (reports submitted in this session that haven't synced to Firestore yet)
+    const merged = [...fbReports];
+    localData.forEach(lr => {
+      if (!merged.find(fr => fr.id === lr.id)) {
+        merged.push(lr); // keep local-only report
+      }
+    });
+    reports = merged.sort((a, b) => new Date(b.date) - new Date(a.date));
+    localStorage.setItem('wb_reports', JSON.stringify(reports));
+  } catch(e) {
+    console.warn('Firestore load failed (using local cache):', e.message || e);
+    reports = localData;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  initFirebase();
+  getUsers();       // seed defaults if needed
+  getCategories();  // seed defaults if needed
+
+  // Keyboard shortcuts for login
+  const lpass = document.getElementById('lpass');
+  const luser = document.getElementById('luser');
+  if (lpass) lpass.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  if (luser) luser.addEventListener('keydown', e => { if(e.key==='Enter') lpass && lpass.focus(); });
+
+  // Keyboard shortcut for track page
+  const tid = document.getElementById('tid');
+  if (tid) tid.addEventListener('keydown', e => { if(e.key==='Enter') trackReport(); });
+
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('report') === 'true') enterReporter();
+});
+
+// ══════════════════════════════════════════════════════════
+//  ROLE / LOGIN
+// ══════════════════════════════════════════════════════════
+async function enterReporter() {
+  role = 'user'; currentUser = null;
+  document.getElementById('roleScreen').style.display = 'none';
+  // Load local cache first for instant display, then sync from Firebase
+  reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+  initApp('user');
+  // Sync from Firebase in background
+  loadReports().catch(e => console.warn('Background sync failed:', e));
+}
+
+function goLogin() {
+  document.getElementById('roleScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('lerr').style.display = 'none';
+  document.getElementById('luser').value = '';
+  document.getElementById('lpass').value = '';
+  setTimeout(()=>document.getElementById('luser').focus(), 50);
+}
+
+function goBack() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('roleScreen').style.display = 'flex';
+  role = null; currentUser = null;
+}
+
+// keyboard listeners consolidated in main DOMContentLoaded
+
+async function doLogin() {
+  const uname = document.getElementById('luser').value.trim().toLowerCase();
+  const pw    = document.getElementById('lpass').value;
+  const users = getUsers();
+  const found = users.find(u => u.username.toLowerCase() === uname && u.password === pw);
+  if (found) {
+    document.getElementById('loginScreen').style.display = 'none';
+    role = found.role;
+    currentUser = found;
+    // Use local cache immediately so UI shows instantly
+    reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+    initApp(role);
+    // Then sync from Firebase in background (subscribeReports handles this for staff)
+  } else {
+    document.getElementById('lerr').style.display = 'block';
+    document.getElementById('lpass').value = '';
+  }
+}
+
+function initApp(r) {
+  // reports already loaded by loadReports() — don't overwrite with stale localStorage
+  if (!reports || reports.length === 0) {
+    reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
+  }
+  document.getElementById('app').style.display = 'block';
+  populateCategoryDropdowns();
+
+  const hdot  = document.getElementById('hdot');
+  const ht    = document.getElementById('htitle');
+  const rb    = document.getElementById('rbadge');
+  const lkBtn = document.getElementById('lockBtn');
+  const nav   = document.getElementById('hnav');
+
+  lkBtn.style.display = 'inline-block';
+
+  // Show Firebase sync status for staff roles
+  const fbBanner = document.getElementById('fb-status');
+  if (r !== 'user') {
+    if (_fbReady && _db) {
+      fbBanner.className = 'cloud';
+      fbBanner.textContent = '☁ Cloud sync active — Firestore connected';
+    } else {
+      fbBanner.className = 'local';
+      fbBanner.textContent = '⚠ Firestore not connected — reports are saved locally only and cannot be seen from other devices. Check your Firebase config and Firestore Rules.';
+    }
+    fbBanner.style.display = 'block';
+  } else {
+    fbBanner.style.display = 'none';
+  }
+
+  if (r === 'user') {
+    hdot.className = 'dot du'; ht.className = 'u'; ht.textContent = 'SecureReport';
+    rb.className = 'rbadge u'; rb.textContent = 'Reporter';
+    lkBtn.style.display = 'none';
+    nav.innerHTML = `<button class="nb au" onclick="showPage('submit',this)">Submit Report</button><button class="nb" onclick="showPage('track',this)">Track Report</button>`;
+    showPage('submit', nav.querySelector('.au'));
+
+  } else if (r === 'admin') {
+    hdot.className = 'dot da'; ht.className = 'a'; ht.textContent = 'SecureReport — Admin';
+    rb.className = 'rbadge a'; rb.textContent = 'Admin';
+    nav.innerHTML = `
+      <button class="nb aa" onclick="showPage('dashboard',this)">Dashboard</button>
+      <button class="nb" onclick="showPage('allreports',this)">All Reports</button>
+      <button class="nb" onclick="showPage('qrcode',this)">&#128247; QR Code</button>
+      <button class="nb" onclick="showPage('changepassword',this)">&#128274; Password</button>`;
+    subscribeReports(onRealtimeUpdate);
+    showPage('dashboard', nav.querySelector('.aa'));
+
+  } else if (r === 'superadmin') {
+    hdot.className = 'dot dsa'; ht.className = 'sa'; ht.textContent = 'SecureReport — SuperAdmin';
+    rb.className = 'rbadge sa'; rb.textContent = 'SuperAdmin';
+    nav.innerHTML = `
+      <button class="nb asa" onclick="showPage('saanalytics',this)">&#128202; Analytics</button>
+      <button class="nb" onclick="showPage('dashboard',this)">Dashboard</button>
+      <button class="nb" onclick="showPage('allreports',this)">All Reports</button>
+      <button class="nb" onclick="showPage('categories',this)">&#128193; Categories</button>
+      <button class="nb" onclick="showPage('users',this)">&#128101; Users</button>
+      <button class="nb" onclick="showPage('qrcode',this)">&#128247; QR</button>
+      <button class="nb" onclick="showPage('changepassword',this)">&#128274; Password</button>`;
+    subscribeReports(onRealtimeUpdate);
+    showPage('saanalytics', nav.querySelector('.asa'));
+
+  } else if (r === 'topmanagement') {
+    hdot.className = 'dot dtm'; ht.className = 'tm'; ht.textContent = 'SecureReport — Top Management';
+    rb.className = 'rbadge tm'; rb.textContent = 'Top Mgmt';
+    nav.innerHTML = `
+      <button class="nb atm" onclick="showPage('topmgmt',this)">&#128202; Analytics</button>
+      <button class="nb" onclick="showPage('changepassword',this)">&#128274; Password</button>`;
+    subscribeReports(onRealtimeUpdate);
+    showPage('topmgmt', nav.querySelector('.atm'));
+  }
+}
+
+function onRealtimeUpdate() {
+  syncFromStorage(); // merge any local-only reports into the Firestore snapshot
+  const active = document.querySelector('.page.active');
+  if (!active) return;
+  const pid = active.id;
+  if (pid==='page-dashboard') renderDash();
+  else if (pid==='page-allreports') renderAll();
+  else if (pid==='page-topmgmt') renderTopMgmt();
+  else if (pid==='page-saanalytics') renderSAAnalytics();
+}
+
+function lockApp() {
+  if(_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('fb-status').style.display = 'none';
+  document.getElementById('roleScreen').style.display = 'flex';
+  role = null; currentUser = null;
+  qrGenerated = false;
+  resetForm();
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+}
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('au','aa','asa','atm'));
+  if (btn) {
+    const cls = role==='user'?'au':role==='admin'?'aa':role==='superadmin'?'asa':'atm';
+    btn.classList.add(cls);
+  }
+  if (name==='dashboard')      renderDash();
+  if (name==='allreports')     renderAll();
+  if (name==='qrcode')         renderQR();
+  if (name==='topmgmt')        renderTopMgmt();
+  if (name==='saanalytics')    renderSAAnalytics();
+  if (name==='categories')     renderCatPage();
+  if (name==='users')          renderUserPage();
+  if (name==='changepassword') renderChangePwPage();
+  if (name==='track') {
+    // Clear stale results when navigating to track page
+    const tres = document.getElementById('tres');
+    const tcon = document.getElementById('tcon');
+    const tid  = document.getElementById('tid');
+    if (tres) tres.classList.remove('show');
+    if (tcon) tcon.innerHTML = '';
+    if (tid)  tid.value = '';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  CATEGORY MANAGEMENT
+// ══════════════════════════════════════════════════════════
+function populateCategoryDropdowns() {
+  let cats = getCategories();
+  // Ensure defaults if somehow empty
+  if (!cats || cats.length === 0) {
+    cats = DEFAULT_CATEGORIES;
+    saveCategories(cats);
+  }
+  // Submit form dropdown
+  const fc = document.getElementById('f-cat');
+  if (fc) {
+    fc.innerHTML = '<option value="">Select category...</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  }
+  // Filter dropdown
+  const fcat = document.getElementById('fcat');
+  if (fcat) {
+    fcat.innerHTML = '<option value="">All Categories</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  }
+}
+
+function renderCatPage() {
+  const cats = getCategories();
+  document.getElementById('catList').innerHTML = cats.map((c,i) => {
+    const isDefault = DEFAULT_CATEGORIES.includes(c);
+    return `<div class="cat-item">
+      <span class="cat-name">${c}</span>
+      ${isDefault ? '<span class="cat-tag">Default</span>' : ''}
+      <button class="cat-del" onclick="deleteCategory(${i})" ${isDefault?'disabled style="opacity:0.3;cursor:not-allowed;"':''}>&#215; Delete</button>
+    </div>`;
+  }).join('');
+}
+
+function addCategory() {
+  const val = document.getElementById('newCatInput').value.trim();
+  const msg = document.getElementById('cat-msg');
+  if (!val) { showCatMsg('Category name cannot be empty.','danger'); return; }
+  const cats = getCategories();
+  if (cats.find(c=>c.toLowerCase()===val.toLowerCase())) { showCatMsg('Category already exists.','danger'); return; }
+  cats.push(val);
+  saveCategories(cats);
+  document.getElementById('newCatInput').value = '';
+  renderCatPage();
+  populateCategoryDropdowns();
+  showCatMsg(`Category "${val}" added successfully.`, 'ok');
+}
+
+function deleteCategory(idx) {
+  const cats = getCategories();
+  if (DEFAULT_CATEGORIES.includes(cats[idx])) { alert('Default categories cannot be deleted.'); return; }
+  if (!confirm(`Delete category "${cats[idx]}"?`)) return;
+  cats.splice(idx, 1);
+  saveCategories(cats);
+  renderCatPage();
+  populateCategoryDropdowns();
+}
+
+function showCatMsg(text, type) {
+  const el = document.getElementById('cat-msg');
+  el.textContent = text;
+  el.style.color = type==='ok' ? 'var(--accent)' : 'var(--danger)';
+  el.style.display = 'block';
+  setTimeout(()=>el.style.display='none', 3000);
+}
+
+// ══════════════════════════════════════════════════════════
+//  USER MANAGEMENT
+// ══════════════════════════════════════════════════════════
+function renderUserPage() {
+  const users = getUsers();
+  document.getElementById('userList').innerHTML = users.map((u,i) => `
+    <div class="user-item">
+      <div class="user-info">
+        <div class="un">${u.name} <span style="color:var(--text3);font-size:10px;">@${u.username}</span></div>
+        <div class="ud">Created by: ${u.createdBy} &nbsp;|&nbsp; Role: ${u.role}</div>
+      </div>
+      <span class="role-tag ${u.role}">${roleLabel(u.role)}</span>
+      <div class="user-actions">
+        <button class="rpw-btn" onclick="openPwModal('${u.username}')">&#128274; Reset PW</button>
+        ${u.role!=='superadmin'?`<button class="del-btn" onclick="deleteUser(${i})">&#215; Delete</button>`:'<button disabled style="opacity:0.2;cursor:not-allowed;background:none;border:1px solid var(--border);border-radius:2px;padding:5px 11px;font-family:var(--mono);font-size:9px;color:var(--text3);">&#128274; Protected</button>'}
+      </div>
+    </div>`).join('');
+}
+
+function roleLabel(r){
+  return r==='superadmin'?'SuperAdmin':r==='topmanagement'?'Top Mgmt':r==='admin'?'Admin':r;
+}
+
+function addUser() {
+  const name = document.getElementById('au-name').value.trim();
+  const uname= document.getElementById('au-user').value.trim().toLowerCase().replace(/\s+/g,'.');
+  const pw   = document.getElementById('au-pass').value;
+  const rl   = document.getElementById('au-role').value;
+  const err  = document.getElementById('au-err');
+  const ok   = document.getElementById('au-ok');
+  err.style.display='none'; ok.style.display='none';
+
+  if(!name||!uname||!pw||!rl){ err.textContent='All fields are required.'; err.style.display='block'; return; }
+  if(pw.length < 6){ err.textContent='Password must be at least 6 characters.'; err.style.display='block'; return; }
+  const users = getUsers();
+  if(users.find(u=>u.username===uname)){ err.textContent=`Username "${uname}" already exists.`; err.style.display='block'; return; }
+
+  users.push({ username:uname, password:pw, role:rl, name, createdBy: currentUser?currentUser.username:'superadmin' });
+  saveUsers(users);
+  ['au-name','au-user','au-pass'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('au-role').value='';
+  renderUserPage();
+  ok.textContent = `Account "${uname}" created successfully.`;
+  ok.style.display='block';
+  setTimeout(()=>ok.style.display='none', 3000);
+}
+
+function deleteUser(idx) {
+  const users = getUsers();
+  if(users[idx].role==='superadmin'){alert('Cannot delete the superadmin account.');return;}
+  if(!confirm(`Delete account "${users[idx].username}" (${users[idx].name})?`)) return;
+  users.splice(idx, 1);
+  saveUsers(users);
+  renderUserPage();
+}
+
+// ── PW MODAL (from user list) ──
+let _pwModalTarget = null;
+function openPwModal(username) {
+  _pwModalTarget = username;
+  document.getElementById('pw-username-display').textContent = 'Resetting password for: @' + username;
+  document.getElementById('pw-new1').value='';
+  document.getElementById('pw-new2').value='';
+  document.getElementById('pw-err').style.display='none';
+  document.getElementById('pw-ok').style.display='none';
+  document.getElementById('pwModal').classList.add('open');
+}
+function closePwModal() { document.getElementById('pwModal').classList.remove('open'); _pwModalTarget=null; }
+function confirmPwReset() {
+  const p1 = document.getElementById('pw-new1').value;
+  const p2 = document.getElementById('pw-new2').value;
+  const err = document.getElementById('pw-err');
+  const ok  = document.getElementById('pw-ok');
+  if(p1.length<6||p1!==p2){ err.style.display='block'; ok.style.display='none'; return; }
+  const users = getUsers();
+  const u = users.find(u=>u.username===_pwModalTarget);
+  if(u) { u.password=p1; saveUsers(users); }
+  err.style.display='none'; ok.style.display='block';
+  if(currentUser && currentUser.username===_pwModalTarget) currentUser.password=p1;
+  setTimeout(()=>closePwModal(), 1800);
+}
+document.getElementById('pwModal').addEventListener('click', function(e){ if(e.target===this) closePwModal(); });
+
+// ══════════════════════════════════════════════════════════
+//  CHANGE PASSWORD PAGE
+// ══════════════════════════════════════════════════════════
+function renderChangePwPage() {
+  const isSA = role === 'superadmin';
+  const ptitle = document.getElementById('cp-ptitle');
+  const info   = document.getElementById('cp-target-info');
+  const others = document.getElementById('cp-resetOther');
+
+  ptitle.className = 'ptitle ' + (isSA ? 'sa' : 'tm');
+  info.textContent = `Changing password for: ${currentUser?.name} (@${currentUser?.username}) — Role: ${roleLabel(role)}`;
+
+  // Clear fields
+  ['cp-old','cp-new','cp-confirm'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cp-err').style.display='none';
+  document.getElementById('cp-ok').style.display='none';
+
+  if(isSA) {
+    others.style.display = 'block';
+    // Populate user select (all except superadmin themselves)
+    const users = getUsers().filter(u=>u.username!==currentUser.username);
+    document.getElementById('cp-target-user').innerHTML = users.map(u=>`<option value="${u.username}">${u.name} (@${u.username}) — ${roleLabel(u.role)}</option>`).join('');
+    document.getElementById('cp-other-new').value='';
+    document.getElementById('cp-other-msg').style.display='none';
+  } else {
+    others.style.display = 'none';
+  }
+}
+
+function changePassword() {
+  const oldPw = document.getElementById('cp-old').value;
+  const newPw = document.getElementById('cp-new').value;
+  const conf  = document.getElementById('cp-confirm').value;
+  const err   = document.getElementById('cp-err');
+  const ok    = document.getElementById('cp-ok');
+  err.style.display='none'; ok.style.display='none';
+
+  if(oldPw !== currentUser.password){ err.textContent='Current password is incorrect.'; err.style.display='block'; return; }
+  if(newPw.length < 6){ err.textContent='New password must be at least 6 characters.'; err.style.display='block'; return; }
+  if(newPw !== conf){ err.textContent='New passwords do not match.'; err.style.display='block'; return; }
+
+  const users = getUsers();
+  const u = users.find(u=>u.username===currentUser.username);
+  if(u){ u.password=newPw; saveUsers(users); currentUser.password=newPw; }
+  ok.style.display='block';
+  ['cp-old','cp-new','cp-confirm'].forEach(id=>document.getElementById(id).value='');
+}
+
+function resetOtherPassword() {
+  const targetUN = document.getElementById('cp-target-user').value;
+  const newPw    = document.getElementById('cp-other-new').value;
+  const msg      = document.getElementById('cp-other-msg');
+  if(newPw.length < 6){ msg.style.color='var(--danger)'; msg.textContent='Password must be at least 6 characters.'; msg.style.display='block'; return; }
+  const users = getUsers();
+  const u = users.find(u=>u.username===targetUN);
+  if(u){ u.password=newPw; saveUsers(users); }
+  msg.style.color='var(--accent)'; msg.textContent=`&#10003; Password reset for @${targetUN}.`; msg.style.display='block';
+  document.getElementById('cp-other-new').value='';
+  setTimeout(()=>msg.style.display='none', 3000);
+}
+
+// ══════════════════════════════════════════════════════════
+//  REPORTER SUBMIT
+// ══════════════════════════════════════════════════════════
+function selSev(el, v) {
+  document.querySelectorAll('.so').forEach(s=>s.classList.remove('sel'));
+  el.classList.add('sel'); selSevVal = v;
+}
+function handleFiles(input) { files = [...files, ...Array.from(input.files)]; renderFileList(); }
+function renderFileList() {
+  document.getElementById('flist').innerHTML = files.map((f,i)=>
+    `<div class="fi"><span>&#128206; ${f.name} (${(f.size/1024).toFixed(1)}KB)</span><button class="rmf" onclick="rmFile(${i})">&#215;</button></div>`
+  ).join('');
+}
+function rmFile(i) { files.splice(i,1); renderFileList(); }
+function genId() { return 'RPT-'+Math.floor(100000+Math.random()*900000); }
+
+function setSubmitFeedback(saveResult) {
+  const title = document.getElementById('submitSuccessTitle');
+  const message = document.getElementById('submitSuccessMessage');
+  const status = document.getElementById('submitSyncStatus');
+  if (!title || !message || !status) return;
+
+  if (saveResult && saveResult.syncedToCloud) {
+    title.textContent = 'Report Submitted Successfully';
+    message.textContent = 'Your report has been recorded and synced to the shared dashboard. Save the Report ID below to track it anonymously at any time.';
+    status.className = 'sync-note cloud show';
+    status.textContent = 'Cloud sync complete. Staff on other devices should be able to see this report.';
+    return;
+  }
+
+  const reason = saveResult && saveResult.localOnlyReason
+    ? saveResult.localOnlyReason
+    : 'Cloud sync is unavailable right now.';
+  title.textContent = 'Report Saved — Sync Pending';
+  message.textContent = 'Your report is safely saved in this browser and queued for cloud sync. Save your Report ID below. It will automatically appear on the dashboard once Firestore rules allow access (see instructions below).';
+  status.className = 'sync-note local show';
+  status.textContent = '⚠ ' + reason;
+}
+
+async function submitReport() {
+  const t = document.getElementById('f-title').value.trim();
+  const d = document.getElementById('f-desc').value.trim();
+  const c = document.getElementById('f-cat').value;
+  if (!t) { alert('Please enter a Report Title.'); return; }
+  if (!d) { alert('Please enter a Description.'); return; }
+  if (!c) { alert('Please select a Category.'); return; }
+  if (!selSevVal) { alert('Please select a Severity Level (Low / Medium / High).'); return; }
+
+  const id = genId();
+  const report = {
+    id, title: t, description: d, category: c,
+    org: document.getElementById('f-org').value.trim(),
+    severity: selSevVal,
+    files: files.map(f => f.name),
+    status: 'new',
+    date: new Date().toISOString(),
+    adminNotes: ''
+  };
+
+  const btn = document.querySelector('#submitForm .sbtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Submitting...'; }
+
+  let saveResult = { savedLocally: true, syncedToCloud: false, localOnlyReason: 'Report save did not complete.' };
+  try {
+    saveResult = await saveReport(report);
+  } catch (e) {
+    console.warn('Submit error:', e);
+    saveResult.localOnlyReason = e.message || String(e);
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '▶ Submit Report'; }
+  setSubmitFeedback(saveResult);
+  document.getElementById('submitForm').style.display = 'none';
+  document.getElementById('sc').classList.add('show');
+  document.getElementById('sid').textContent = id;
+}
+
+function copyReportId() {
+  const id = document.getElementById('sid').textContent;
+  navigator.clipboard.writeText(id).then(() => {
+    const btn = document.getElementById('copyBtn');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '⧉ Copy ID'; }, 2000); }
+  }).catch(() => {
+    // Fallback for older browsers
+    const el = document.createElement('textarea');
+    el.value = document.getElementById('sid').textContent;
+    document.body.appendChild(el); el.select(); document.execCommand('copy');
+    document.body.removeChild(el);
+    const btn = document.getElementById('copyBtn');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '⧉ Copy ID'; }, 2000); }
+  });
+}
+
+function goToTrackWithId() {
+  const id = document.getElementById('sid').textContent;
+  // Navigate to track page with the report ID pre-filled
+  const nav = document.getElementById('hnav');
+  const trackBtn = nav ? nav.querySelectorAll('button')[1] : null;
+  showPage('track', trackBtn);
+  setTimeout(() => {
+    const tid = document.getElementById('tid');
+    if (tid) {
+      tid.value = id;
+      trackReport();
+    }
+  }, 50);
+}
+
+function resetForm() {
+  ['f-title','f-desc','f-org'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const fc=document.getElementById('f-cat'); if(fc) fc.value='';
+  document.querySelectorAll('.so').forEach(s=>s.classList.remove('sel'));
+  selSevVal=''; files=[];
+  const fl=document.getElementById('flist'); if(fl) fl.innerHTML='';
+  const sf=document.getElementById('submitForm'); if(sf) sf.style.display='';
+  const sc=document.getElementById('sc'); if(sc) sc.classList.remove('show');
+  const title = document.getElementById('submitSuccessTitle');
+  const message = document.getElementById('submitSuccessMessage');
+  const status = document.getElementById('submitSyncStatus');
+  if (title) title.textContent = 'Report Submitted Successfully';
+  if (message) message.textContent = 'Your report has been recorded. Save the Report ID below and use it to check your report status anonymously at any time.';
+  if (status) status.className = 'sync-note';
+  if (status) status.textContent = '';
+  // Navigate back to submit page properly (fixes blank screen after "Submit Another")
+  if (role === 'user') {
+    const nav = document.getElementById('hnav');
+    const submitBtn = nav ? nav.querySelector('button') : null;
+    showPage('submit', submitBtn);
+  }
+}
+
+async function trackReport() {
+  const inp = document.getElementById('tid').value.trim().toUpperCase();
+  const res = document.getElementById('tres');
+  const con = document.getElementById('tcon');
+  if (!inp) {
+    con.innerHTML = '<span style="font-family:var(--mono);font-size:12px;color:var(--danger);">&#9888; Please enter a Report ID.</span>';
+    res.classList.add('show');
+    return;
+  }
+  // Search in-memory reports first (covers just-submitted reports)
+  // then fall back to localStorage in case of stale in-memory state
+  let r = reports.find(x => x.id === inp);
+  if (!r) {
+    const local = JSON.parse(localStorage.getItem('wb_reports') || '[]');
+    r = local.find(x => x.id === inp);
+    if (r) reports = local; // sync in-memory with localStorage
+  }
+  if(!r) { con.innerHTML=`<span style="font-family:var(--mono);font-size:12px;color:var(--danger);">&#9888; No report found for ID: ${inp||'—'}</span>`; res.classList.add('show'); return; }
+  con.innerHTML = `<div style="display:flex;flex-direction:column;gap:11px;">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span style="font-family:var(--mono);font-size:17px;color:var(--accent);">${r.id}</span>
+      <span class="stbadge ${r.status}">${r.status}</span>
+      <span class="sevb ${r.severity}">${r.severity}</span>
+    </div>
+    <div style="font-size:14px;color:var(--text);">${r.title}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text2);">${r.category}</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);">Submitted: ${new Date(r.date).toLocaleString('en-IN')}</div>
+    ${r.adminNotes?`<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:11px 13px;"><div style="font-family:var(--mono);font-size:10px;color:var(--adm);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px;">Admin Note</div><div style="font-size:13px;color:var(--text2);line-height:1.6;">${r.adminNotes}</div></div>`:''}
+  </div>`;
+  res.classList.add('show');
+}
+// track keyboard listener consolidated in main DOMContentLoaded
+
+// ══════════════════════════════════════════════════════════
+//  ADMIN / SUPERADMIN DASHBOARD
+// ══════════════════════════════════════════════════════════
+async function manualFlush() {
+  if (!_fbReady || !_db) {
+    alert('Firestore is not connected. Check your Firebase config and Firestore Rules in Firebase Console.');
+    return;
+  }
+  const q = getPendingQueue();
+  if (!q.length) { alert('No pending reports to sync.'); return; }
+  await flushPendingQueue();
+  const remaining = getPendingQueue().length;
+  if (remaining === 0) {
+    alert('All pending reports synced successfully!');
+    renderDash();
+  } else {
+    alert(remaining + ' report(s) still failed. Check Firestore Rules: Firebase Console → Firestore → Rules → allow read, write: if true;');
+  }
+}
+
+function syncFromStorage() {
+  // Merge in-memory reports with localStorage to catch any submissions
+  // made in reporter mode (same browser, different session)
+  const stored = JSON.parse(localStorage.getItem('wb_reports') || '[]');
+  stored.forEach(sr => {
+    if (!reports.find(r => r.id === sr.id)) {
+      reports.push(sr);
+    } else {
+      // Update in-memory with stored version (may have admin notes etc)
+      const idx = reports.findIndex(r => r.id === sr.id);
+      if (idx >= 0) reports[idx] = sr;
     }
   });
+  // Save merged result back
+  localStorage.setItem('wb_reports', JSON.stringify(reports));
+}
 
-  // ---- ROLE / LOGIN ----
-  function enterReporter() {
-    role = 'user';
-    document.getElementById('roleScreen').style.display = 'none';
-    initApp('user');
-  }
+function renderDash() {
+  syncFromStorage();
+  const t=reports.length, n=reports.filter(r=>r.status==='new').length, rv=reports.filter(r=>r.status==='reviewing').length, rs=reports.filter(r=>r.status==='resolved').length, hi=reports.filter(r=>r.severity==='high').length;
+  const pending = getPendingQueue().length;
+  document.getElementById('srow').innerHTML = `
+    <div class="scard tall"><div class="sl">Total Reports</div><div class="sv">${t}</div></div>
+    <div class="scard snew"><div class="sl">New</div><div class="sv">${n}</div></div>
+    <div class="scard srev"><div class="sl">Reviewing</div><div class="sv">${rv}</div></div>
+    <div class="scard sres"><div class="sl">Resolved</div><div class="sv">${rs}</div></div>
+    ${pending > 0 ? `<div class="scard" style="border-color:rgba(255,170,0,0.4);cursor:pointer;" onclick="manualFlush()" title="Click to retry syncing">
+      <div class="sl" style="color:var(--warn)">Pending Sync</div>
+      <div class="sv" style="color:var(--warn)">${pending}</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--warn);margin-top:4px;opacity:0.7">Click to retry ↻</div>
+    </div>` : ''}`;
+  const recent = [...reports].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+  document.getElementById('dashGrid').innerHTML = recent.length
+    ? recent.map(r=>cardHTML(r,reports.indexOf(r))).join('')
+    : '<div class="empty"><div class="ei">&#128196;</div><div>No reports yet</div></div>';
+}
 
-  function goLogin() {
-    document.getElementById('roleScreen').style.display = 'none';
-    document.getElementById('loginScreen').style.display = 'flex';
-    document.getElementById('lerr').style.display = 'none';
-    document.getElementById('lpass').value = '';
-    setTimeout(()=>document.getElementById('lpass').focus(), 50);
-  }
+function renderAll() {
+  syncFromStorage();
+  const sf=document.getElementById('fsev').value, st=document.getElementById('fst').value, sc=document.getElementById('fcat').value;
+  let f = reports.filter(r=>(!sf||r.severity===sf)&&(!st||r.status===st)&&(!sc||r.category===sc));
+  document.getElementById('allGrid').innerHTML = f.length
+    ? f.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(r=>cardHTML(r,reports.indexOf(r))).join('')
+    : '<div class="empty"><div class="ei">&#128196;</div><div>No reports match filters</div></div>';
+}
 
-  function goBack() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('roleScreen').style.display = 'flex';
-    role = null;
-  }
+function cardHTML(r, idx) {
+  const ds = new Date(r.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  return `<div class="rcard" onclick="openDetail(${idx})">
+    <div class="rcid">${r.id}</div>
+    <div class="rcb">
+      <h3>${r.title}</h3>
+      <p>${r.description}</p>
+      <div class="stup" onclick="event.stopPropagation()">
+        <button onclick="updStatus(${idx},'new')">New</button>
+        <button onclick="updStatus(${idx},'reviewing')">Reviewing</button>
+        <button onclick="updStatus(${idx},'resolved')">Resolved</button>
+      </div>
+    </div>
+    <div class="rcm">
+      <span class="sevb ${r.severity}">${r.severity}</span>
+      <span class="stbadge ${r.status}">${r.status}</span>
+      <span class="rdate">${ds}</span>
+    </div>
+  </div>`;
+}
 
-  document.getElementById('lpass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+async function updStatus(i, s) {
+  if (!reports[i]) return;
+  reports[i].status = s;
+  await saveReport(reports[i]);
+  const activePage = document.querySelector('.page.active');
+  if (!activePage) return;
+  if (activePage.id === 'page-dashboard') renderDash();
+  else if (activePage.id === 'page-allreports') renderAll();
+  else if (activePage.id === 'page-saanalytics') renderSAAnalytics();
+  else renderAll();
+}
 
-  function doLogin() {
-    const v = document.getElementById('lpass').value;
-    if(v === ADMIN_PASS) {
-      document.getElementById('loginScreen').style.display = 'none';
-      role = 'admin';
-      initApp('admin');
-    } else {
-      document.getElementById('lerr').style.display = 'block';
-      document.getElementById('lpass').value = '';
-    }
-  }
+async function saveNote(i) {
+  reports[i].adminNotes = document.getElementById('na-'+i).value.trim();
+  await saveReport(reports[i]);
+  const el = document.getElementById('ns-'+i);
+  el.style.display='inline'; setTimeout(()=>el.style.display='none',2200);
+}
 
-  function initApp(r) {
-    reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
-    document.getElementById('app').style.display = 'block';
-    const isA = r === 'admin';
-    document.getElementById('hdot').className = 'dot ' + (isA ? 'da' : 'du');
-    const ht = document.getElementById('htitle');
-    ht.className = isA ? 'a' : 'u';
-    ht.textContent = isA ? 'SecureReport — Admin' : 'SecureReport';
-    const rb = document.getElementById('rbadge');
-    rb.className = 'rbadge ' + (isA ? 'a' : 'u');
-    rb.textContent = isA ? 'Admin' : 'Reporter';
-    document.getElementById('lockBtn').style.display = isA ? 'inline-block' : 'none';
-    const nav = document.getElementById('hnav');
-    if(isA) {
-      nav.innerHTML = `<button class="nb aa" onclick="showPage('dashboard',this)">Dashboard</button><button class="nb" onclick="showPage('allreports',this)">All Reports</button><button class="nb" onclick="showPage('qrcode',this)">&#128247; QR Code</button>`;
-      showPage('dashboard', nav.querySelector('.aa'));
-    } else {
-      nav.innerHTML = `<button class="nb au" onclick="showPage('submit',this)">Submit Report</button><button class="nb" onclick="showPage('track',this)">Track Report</button>`;
-      showPage('submit', nav.querySelector('.au'));
-    }
-  }
+async function delReport(i) {
+  if(!confirm('Permanently delete this report? This cannot be undone.')) return;
+  const id = reports[i].id;
+  await deleteReportById(id);
+  closeDetail();
+  const activePage = document.querySelector('.page.active');
+  if (!activePage) return;
+  if (activePage.id === 'page-dashboard') renderDash();
+  else if (activePage.id === 'page-saanalytics') renderSAAnalytics();
+  else renderAll();
+}
 
-  function lockApp() {
-    document.getElementById('app').style.display = 'none';
-    document.getElementById('roleScreen').style.display = 'flex';
-    role = null;
-    resetForm();
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  }
+// ══════════════════════════════════════════════════════════
+//  TOP MANAGEMENT ANALYTICS
+// ══════════════════════════════════════════════════════════
+function renderTopMgmt() {
+  syncFromStorage();
+  const t  = reports.length;
+  const n  = reports.filter(r=>r.status==='new').length;
+  const rv = reports.filter(r=>r.status==='reviewing').length;
+  const rs = reports.filter(r=>r.status==='resolved').length;
+  const lo = reports.filter(r=>r.severity==='low').length;
+  const me = reports.filter(r=>r.severity==='medium').length;
+  const hi = reports.filter(r=>r.severity==='high').length;
 
-  function showPage(name, btn) {
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    document.getElementById('page-'+name).classList.add('active');
-    document.querySelectorAll('.nb').forEach(b=>b.classList.remove('au','aa'));
-    if(btn) btn.classList.add(role==='admin' ? 'aa' : 'au');
-    if(name==='dashboard') renderDash();
-    if(name==='allreports') renderAll();
-    if(name==='qrcode') renderQR();
-  }
+  // Stat cards
+  document.getElementById('tm-srow').innerHTML = `
+    <div class="scard tall"><div class="sl">Total Reports</div><div class="sv">${t}</div></div>
+    <div class="scard snew"><div class="sl">New / Pending</div><div class="sv">${n}</div></div>
+    <div class="scard srev"><div class="sl">In Review</div><div class="sv">${rv}</div></div>
+    <div class="scard sres"><div class="sl">Resolved</div><div class="sv">${rs}</div></div>`;
 
-  // ---- REPORTER SUBMIT ----
-  function selSev(el, v) {
-    document.querySelectorAll('.so').forEach(s=>s.classList.remove('sel'));
-    el.classList.add('sel');
-    selSevVal = v;
-  }
+  // Category bars
+  const cats = getCategories();
+  const catCounts = {};
+  cats.forEach(c=>catCounts[c]=0);
+  reports.forEach(r=>{ if(catCounts[r.category]!==undefined) catCounts[r.category]++; else catCounts[r.category]=(catCounts[r.category]||0)+1; });
+  const maxCat = Math.max(1, ...Object.values(catCounts));
+  document.getElementById('tm-catbars').innerHTML = cats.filter(c=>catCounts[c]>0).sort((a,b)=>catCounts[b]-catCounts[a]).slice(0,8).map(c=>`
+    <div class="bar-item">
+      <div class="bar-label"><span>${c}</span><span>${catCounts[c]||0}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(((catCounts[c]||0)/maxCat)*100)}%"></div></div>
+    </div>`).join('') || '<div style="font-family:var(--mono);font-size:11px;color:var(--text3);">No data yet</div>';
 
-  function handleFiles(input) {
-    files = [...files, ...Array.from(input.files)];
-    renderFileList();
-  }
+  // Severity boxes
+  document.getElementById('tm-sevbox').innerHTML = `
+    <div class="sev-box low"><div class="sv2">${lo}</div><div class="sl2">Low</div></div>
+    <div class="sev-box medium"><div class="sv2">${me}</div><div class="sl2">Medium</div></div>
+    <div class="sev-box high"><div class="sv2">${hi}</div><div class="sl2">High</div></div>`;
 
-  function renderFileList() {
-    document.getElementById('flist').innerHTML = files.map((f,i)=>
-      `<div class="fi"><span>&#128206; ${f.name} (${(f.size/1024).toFixed(1)}KB)</span><button class="rmf" onclick="rmFile(${i})">&#215;</button></div>`
-    ).join('');
-  }
+  // Status bars
+  const maxSt = Math.max(1, n, rv, rs);
+  document.getElementById('tm-stbars').innerHTML = [
+    {label:'New',count:n,cls:'green'},{label:'Reviewing',count:rv,cls:'warn'},{label:'Resolved',count:rs,cls:''}
+  ].map(s=>`<div class="bar-item">
+    <div class="bar-label"><span>${s.label}</span><span>${s.count}</span></div>
+    <div class="bar-track"><div class="bar-fill ${s.cls}" style="width:${Math.round((s.count/maxSt)*100)}%"></div></div>
+  </div>`).join('');
 
-  function rmFile(i) { files.splice(i,1); renderFileList(); }
-  function genId() { return 'RPT-'+Math.floor(100000+Math.random()*900000); }
+  // Weekly trend (last 8 weeks)
+  const now = new Date();
+  const weekBuckets = Array.from({length:8},(_,i)=>{
+    const d = new Date(now); d.setDate(d.getDate() - (7*(7-i)));
+    return { label: `W${8-i}`, start: new Date(d), end: new Date(d.setDate(d.getDate()+7)), count:0 };
+  });
+  reports.forEach(r=>{
+    const rd = new Date(r.date);
+    weekBuckets.forEach(wb=>{ if(rd>=wb.start && rd<wb.end) wb.count++; });
+  });
+  const maxW = Math.max(1, ...weekBuckets.map(w=>w.count));
+  document.getElementById('tm-trend').innerHTML = weekBuckets.map(w=>`
+    <div class="trend-bar-wrap">
+      <div class="trend-bar" style="height:${Math.max(4,Math.round((w.count/maxW)*70))}px;" title="${w.count} reports"></div>
+      <div class="trend-label">${w.label}</div>
+    </div>`).join('');
 
-  function submitReport() {
-    const t = document.getElementById('f-title').value.trim();
-    const d = document.getElementById('f-desc').value.trim();
-    const c = document.getElementById('f-cat').value;
-    if(!t||!d||!c||!selSevVal) { alert('Please fill all required fields and select a severity level.'); return; }
-    const id = genId();
-    reports.push({ id, title:t, description:d, category:c, org:document.getElementById('f-org').value.trim(), severity:selSevVal, files:files.map(f=>f.name), status:'new', date:new Date().toISOString(), adminNotes:'' });
-    localStorage.setItem('wb_reports', JSON.stringify(reports));
-    document.getElementById('submitForm').style.display = 'none';
-    document.getElementById('sc').classList.add('show');
-    document.getElementById('sid').textContent = id;
-  }
+  // Resolution rate
+  const resRate = t > 0 ? Math.round((rs/t)*100) : 0;
+  const reviewRate = t > 0 ? Math.round((rv/t)*100) : 0;
+  const pendingRate = t > 0 ? Math.round((n/t)*100) : 0;
+  document.getElementById('tm-resrate').innerHTML = `
+    <div class="bar-item">
+      <div class="bar-label"><span>Resolution Rate</span><span style="color:var(--accent);">${resRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill green" style="width:${resRate}%"></div></div>
+    </div>
+    <div class="bar-item">
+      <div class="bar-label"><span>In-Progress Rate</span><span style="color:var(--warn);">${reviewRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill warn" style="width:${reviewRate}%"></div></div>
+    </div>
+    <div class="bar-item">
+      <div class="bar-label"><span>Pending Rate</span><span style="color:var(--danger);">${pendingRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill danger" style="width:${pendingRate}%"></div></div>
+    </div>
+    <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.8;">
+      Total reports: <strong style="color:var(--text);">${t}</strong><br>
+      High severity: <strong style="color:var(--danger);">${hi}</strong><br>
+      Avg daily (30d): <strong style="color:var(--tm);">${avgDaily30()} reports</strong>
+    </div>`;
 
-  function resetForm() {
-    ['f-title','f-desc','f-org'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-    const fc=document.getElementById('f-cat'); if(fc) fc.value='';
-    document.querySelectorAll('.so').forEach(s=>s.classList.remove('sel'));
-    selSevVal=''; files=[];
-    const fl=document.getElementById('flist'); if(fl) fl.innerHTML='';
-    const sf=document.getElementById('submitForm'); if(sf) sf.style.display='';
-    const sc=document.getElementById('sc'); if(sc) sc.classList.remove('show');
-  }
-
-  // ---- REPORTER TRACK ----
-  function trackReport() {
-    const inp = document.getElementById('tid').value.trim().toUpperCase();
-    const r = reports.find(x=>x.id===inp);
-    const res = document.getElementById('tres');
-    const con = document.getElementById('tcon');
-    if(!r) {
-      con.innerHTML = `<span style="font-family:var(--mono);font-size:12px;color:var(--danger);">&#9888; No report found for ID: ${inp||'—'}</span>`;
-      res.classList.add('show'); return;
-    }
-    con.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:11px;">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <span style="font-family:var(--mono);font-size:17px;color:var(--accent);">${r.id}</span>
-          <span class="stbadge ${r.status}">${r.status}</span>
-          <span class="sevb ${r.severity}">${r.severity}</span>
-        </div>
-        <div style="font-size:14px;color:var(--text);">${r.title}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--text2);">${r.category}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);">Submitted: ${new Date(r.date).toLocaleString('en-IN')}</div>
-        ${r.adminNotes ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:11px 13px;"><div style="font-family:var(--mono);font-size:10px;color:var(--adm);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px;">Admin Note</div><div style="font-size:13px;color:var(--text2);line-height:1.6;">${r.adminNotes}</div></div>` : ''}
-      </div>`;
-    res.classList.add('show');
-  }
-
-  document.getElementById('tid').addEventListener('keydown', e=>{ if(e.key==='Enter') trackReport(); });
-
-  // ---- QR CODE ----
-  function renderQR() {
-    if(qrGenerated) return;
-    qrGenerated = true;
-    const base = window.location.href.split('?')[0];
-    const url = base + '?report=true';
-    document.getElementById('qrUrlDisplay').textContent = url;
-    new QRCode(document.getElementById('qrcode'), {
-      text: url,
-      width: 164,
-      height: 164,
-      colorDark: '#000000',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.H
-    });
-  }
-
-  function downloadQR() {
-    setTimeout(() => {
-      const canvas = document.querySelector('#qrcode canvas');
-      if(!canvas) { alert('QR code is still generating, please try again in a moment.'); return; }
-      const link = document.createElement('a');
-      link.download = 'securereport-qr.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    }, 200);
-  }
-
-  // ---- ADMIN DASHBOARD ----
-  function renderDash() {
-    reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
-    const t=reports.length, n=reports.filter(r=>r.status==='new').length, rv=reports.filter(r=>r.status==='reviewing').length, rs=reports.filter(r=>r.status==='resolved').length;
-    document.getElementById('srow').innerHTML = `
-      <div class="scard tall"><div class="sl">Total</div><div class="sv">${t}</div></div>
-      <div class="scard snew"><div class="sl">New</div><div class="sv">${n}</div></div>
-      <div class="scard srev"><div class="sl">Reviewing</div><div class="sv">${rv}</div></div>
-      <div class="scard sres"><div class="sl">Resolved</div><div class="sv">${rs}</div></div>
-    `;
-    const recent = [...reports].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
-    document.getElementById('dashGrid').innerHTML = recent.length
-      ? recent.map(r=>cardHTML(r,reports.indexOf(r))).join('')
-      : '<div class="empty"><div class="ei">&#128196;</div><div>No reports yet</div></div>';
-  }
-
-  function renderAll() {
-    reports = JSON.parse(localStorage.getItem('wb_reports')||'[]');
-    const sf=document.getElementById('fsev').value, st=document.getElementById('fst').value, sc=document.getElementById('fcat').value;
-    let f = reports.filter(r=>(!sf||r.severity===sf)&&(!st||r.status===st)&&(!sc||r.category===sc));
-    document.getElementById('allGrid').innerHTML = f.length
-      ? f.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(r=>cardHTML(r,reports.indexOf(r))).join('')
-      : '<div class="empty"><div class="ei">&#128196;</div><div>No reports match filters</div></div>';
-  }
-
-  function cardHTML(r, idx) {
-    const ds = new Date(r.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-    return `
-      <div class="rcard" onclick="openDetail(${idx})">
-        <div class="rcid">${r.id}</div>
-        <div class="rcb">
-          <h3>${r.title}</h3>
-          <p>${r.description}</p>
-          <div class="stup" onclick="event.stopPropagation()">
-            <button onclick="updStatus(${idx},'new')">New</button>
-            <button onclick="updStatus(${idx},'reviewing')">Reviewing</button>
-            <button onclick="updStatus(${idx},'resolved')">Resolved</button>
+  // Recent reports (read-only)
+  const recent = [...reports].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  document.getElementById('tm-recentgrid').innerHTML = recent.length
+    ? recent.map(r=>{
+        const ds = new Date(r.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+        return `<div class="rcard readonly">
+          <div class="rcid">${r.id}</div>
+          <div class="rcb"><h3>${r.title}</h3><p>${r.description}</p>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:5px;">${r.category}</div></div>
+          <div class="rcm">
+            <span class="sevb ${r.severity}">${r.severity}</span>
+            <span class="stbadge ${r.status}">${r.status}</span>
+            <span class="rdate">${ds}</span>
           </div>
-        </div>
-        <div class="rcm">
-          <span class="sevb ${r.severity}">${r.severity}</span>
-          <span class="stbadge ${r.status}">${r.status}</span>
-          <span class="rdate">${ds}</span>
-        </div>
-      </div>`;
-  }
+        </div>`;
+      }).join('')
+    : '<div class="empty"><div class="ei">&#128196;</div><div>No reports yet</div></div>';
+}
 
-  function updStatus(i, s) {
-    reports[i].status = s;
-    localStorage.setItem('wb_reports', JSON.stringify(reports));
-    if(document.getElementById('page-dashboard').classList.contains('active')) renderDash(); else renderAll();
-  }
+function avgDaily30() {
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-30);
+  const cnt = reports.filter(r=>new Date(r.date)>=cutoff).length;
+  return (cnt/30).toFixed(1);
+}
 
-  function saveNote(i) {
-    reports[i].adminNotes = document.getElementById('na-'+i).value.trim();
-    localStorage.setItem('wb_reports', JSON.stringify(reports));
-    const el = document.getElementById('ns-'+i);
-    el.style.display='inline'; setTimeout(()=>el.style.display='none',2200);
-  }
+// ══════════════════════════════════════════════════════════
+//  SUPERADMIN ANALYTICS
+// ══════════════════════════════════════════════════════════
+function renderSAAnalytics() {
+  syncFromStorage();
+  const t  = reports.length;
+  const n  = reports.filter(r=>r.status==='new').length;
+  const rv = reports.filter(r=>r.status==='reviewing').length;
+  const rs = reports.filter(r=>r.status==='resolved').length;
+  const lo = reports.filter(r=>r.severity==='low').length;
+  const me = reports.filter(r=>r.severity==='medium').length;
+  const hi = reports.filter(r=>r.severity==='high').length;
+  const totalUsers = getUsers().length;
+  const staffUsers = getUsers().filter(u=>u.role!=='superadmin').length;
 
-  function delReport(i) {
-    if(!confirm('Permanently delete this report? This cannot be undone.')) return;
-    reports.splice(i,1);
-    localStorage.setItem('wb_reports', JSON.stringify(reports));
-    closeDetail();
-    if(document.getElementById('page-dashboard').classList.contains('active')) renderDash(); else renderAll();
-  }
+  // Stat cards (extra: users, high-severity)
+  document.getElementById('sa-srow').innerHTML = `
+    <div class="scard tall"><div class="sl">Total Reports</div><div class="sv">${t}</div></div>
+    <div class="scard snew"><div class="sl">New / Pending</div><div class="sv">${n}</div></div>
+    <div class="scard srev"><div class="sl">In Review</div><div class="sv">${rv}</div></div>
+    <div class="scard sres"><div class="sl">Resolved</div><div class="sv">${rs}</div></div>`;
 
-  // ---- MODAL ----
-  function openDetail(i) {
-    const r = reports[i];
-    document.getElementById('mbox').innerHTML = `
-      <h2>${r.id}</h2>
-      <div class="mrow"><span class="lbl">Title</span><span class="val">${r.title}</span></div>
-      <div class="mrow"><span class="lbl">Category</span><span class="val">${r.category}</span></div>
-      <div class="mrow"><span class="lbl">Organization</span><span class="val">${r.org||'—'}</span></div>
-      <div class="mrow"><span class="lbl">Severity</span><span class="val"><span class="sevb ${r.severity}">${r.severity}</span></span></div>
-      <div class="mrow"><span class="lbl">Status</span><span class="val"><span class="stbadge ${r.status}">${r.status}</span></span></div>
-      <div class="mrow"><span class="lbl">Submitted</span><span class="val">${new Date(r.date).toLocaleString('en-IN')}</span></div>
-      <div class="mrow"><span class="lbl">Description</span><span class="val">${r.description}</span></div>
-      <div class="mrow"><span class="lbl">Evidence</span><span class="val">${r.files&&r.files.length?r.files.join(', '):'None attached'}</span></div>
-      <div class="mrow">
-        <span class="lbl">Admin Notes</span>
-        <div style="display:flex;flex-direction:column;gap:7px;">
-          <textarea class="nota" id="na-${i}" placeholder="Add internal notes...">${r.adminNotes||''}</textarea>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="notebtn" onclick="saveNote(${i})">Save Note</button>
-            <span id="ns-${i}" style="display:none;font-family:var(--mono);font-size:10px;color:var(--accent);">&#10003; Saved</span>
-          </div>
+  // Category bars (gold fill)
+  const cats = getCategories();
+  const catCounts = {};
+  cats.forEach(c=>catCounts[c]=0);
+  reports.forEach(r=>{ if(catCounts[r.category]!==undefined) catCounts[r.category]++; else catCounts[r.category]=(catCounts[r.category]||0)+1; });
+  const maxCat = Math.max(1, ...Object.values(catCounts));
+  document.getElementById('sa-catbars').innerHTML = cats.filter(c=>catCounts[c]>0).sort((a,b)=>catCounts[b]-catCounts[a]).slice(0,8).map(c=>`
+    <div class="bar-item">
+      <div class="bar-label"><span>${c}</span><span style="color:var(--sa);">${catCounts[c]||0}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(((catCounts[c]||0)/maxCat)*100)}%;background:linear-gradient(90deg,var(--sa2),var(--sa));"></div></div>
+    </div>`).join('') || '<div style="font-family:var(--mono);font-size:11px;color:var(--text3);">No data yet</div>';
+
+  // Severity boxes
+  document.getElementById('sa-sevbox').innerHTML = `
+    <div class="sev-box low"><div class="sv2">${lo}</div><div class="sl2">Low</div></div>
+    <div class="sev-box medium"><div class="sv2">${me}</div><div class="sl2">Medium</div></div>
+    <div class="sev-box high"><div class="sv2">${hi}</div><div class="sl2">High</div></div>`;
+
+  // Status bars
+  const maxSt = Math.max(1, n, rv, rs);
+  document.getElementById('sa-stbars').innerHTML = [
+    {label:'New',count:n,cls:'green'},{label:'Reviewing',count:rv,cls:'warn'},{label:'Resolved',count:rs,cls:''}
+  ].map(s=>`<div class="bar-item">
+    <div class="bar-label"><span>${s.label}</span><span>${s.count}</span></div>
+    <div class="bar-track"><div class="bar-fill ${s.cls}" style="width:${Math.round((s.count/maxSt)*100)}%"></div></div>
+  </div>`).join('');
+
+  // Weekly trend (gold bars)
+  const now = new Date();
+  const weekBuckets = Array.from({length:8},(_,i)=>{
+    const d = new Date(now); d.setDate(d.getDate() - (7*(7-i)));
+    return { label:`W${8-i}`, start:new Date(d), end:new Date(d.setDate(d.getDate()+7)), count:0 };
+  });
+  reports.forEach(r=>{ const rd=new Date(r.date); weekBuckets.forEach(wb=>{ if(rd>=wb.start&&rd<wb.end) wb.count++; }); });
+  const maxW = Math.max(1, ...weekBuckets.map(w=>w.count));
+  document.getElementById('sa-trend').innerHTML = weekBuckets.map(w=>`
+    <div class="trend-bar-wrap">
+      <div class="trend-bar" style="height:${Math.max(4,Math.round((w.count/maxW)*70))}px;background:rgba(245,197,66,0.18);border-color:rgba(245,197,66,0.35);" title="${w.count} reports"></div>
+      <div class="trend-label">${w.label}</div>
+    </div>`).join('');
+
+  // Resolution rate + system stats
+  const resRate     = t>0 ? Math.round((rs/t)*100) : 0;
+  const reviewRate  = t>0 ? Math.round((rv/t)*100) : 0;
+  const pendingRate = t>0 ? Math.round((n/t)*100)  : 0;
+  document.getElementById('sa-resrate').innerHTML = `
+    <div class="bar-item">
+      <div class="bar-label"><span>Resolution Rate</span><span style="color:var(--accent);">${resRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill green" style="width:${resRate}%"></div></div>
+    </div>
+    <div class="bar-item">
+      <div class="bar-label"><span>In-Progress Rate</span><span style="color:var(--warn);">${reviewRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill warn" style="width:${reviewRate}%"></div></div>
+    </div>
+    <div class="bar-item">
+      <div class="bar-label"><span>Pending Rate</span><span style="color:var(--danger);">${pendingRate}%</span></div>
+      <div class="bar-track"><div class="bar-fill danger" style="width:${pendingRate}%"></div></div>
+    </div>
+    <div style="margin-top:14px;background:var(--bg);border:1px solid rgba(245,197,66,0.15);border-radius:3px;padding:12px 14px;font-family:var(--mono);font-size:10px;color:var(--text3);line-height:2;">
+      Total reports: <strong style="color:var(--text);">${t}</strong><br>
+      High severity: <strong style="color:var(--danger);">${hi}</strong><br>
+      Avg daily (30d): <strong style="color:var(--sa);">${avgDaily30()} reports</strong><br>
+      Staff accounts: <strong style="color:var(--sa);">${staffUsers}</strong> &nbsp;|&nbsp; Total users: <strong style="color:var(--text);">${totalUsers}</strong><br>
+      Active categories: <strong style="color:var(--sa);">${cats.length}</strong>
+    </div>`;
+
+  // Recent reports (with full card — superadmin can click to edit)
+  const recent = [...reports].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  document.getElementById('sa-recentgrid').innerHTML = recent.length
+    ? recent.map(r=>cardHTML(r,reports.indexOf(r))).join('')
+    : '<div class="empty"><div class="ei">&#128196;</div><div>No reports yet</div></div>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  DETAIL MODAL
+// ══════════════════════════════════════════════════════════
+function openDetail(i) {
+  const r = reports[i];
+  document.getElementById('mbox').innerHTML = `
+    <h2>${r.id}</h2>
+    <div class="mrow"><span class="lbl">Title</span><span class="val">${r.title}</span></div>
+    <div class="mrow"><span class="lbl">Category</span><span class="val">${r.category}</span></div>
+    <div class="mrow"><span class="lbl">Organization</span><span class="val">${r.org||'—'}</span></div>
+    <div class="mrow"><span class="lbl">Severity</span><span class="val"><span class="sevb ${r.severity}">${r.severity}</span></span></div>
+    <div class="mrow"><span class="lbl">Status</span><span class="val"><span class="stbadge ${r.status}">${r.status}</span></span></div>
+    <div class="mrow"><span class="lbl">Submitted</span><span class="val">${new Date(r.date).toLocaleString('en-IN')}</span></div>
+    <div class="mrow"><span class="lbl">Description</span><span class="val">${r.description}</span></div>
+    <div class="mrow"><span class="lbl">Evidence</span><span class="val">${r.files&&r.files.length?r.files.join(', '):'None attached'}</span></div>
+    <div class="mrow">
+      <span class="lbl">Admin Notes</span>
+      <div style="display:flex;flex-direction:column;gap:7px;">
+        <textarea class="nota" id="na-${i}" placeholder="Add internal notes...">${r.adminNotes||''}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="notebtn" onclick="saveNote(${i})">Save Note</button>
+          <span id="ns-${i}" style="display:none;font-family:var(--mono);font-size:10px;color:var(--accent);">&#10003; Saved</span>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:14px;">
-        <button class="delbtn" onclick="delReport(${i})">&#128465; Delete Report</button>
-        <button class="mclose" onclick="closeDetail()">Close</button>
-      </div>`;
-    document.getElementById('detailModal').classList.add('open');
-  }
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:14px;">
+      <button class="delbtn" onclick="delReport(${i})">&#128465; Delete Report</button>
+      <button class="mclose" onclick="closeDetail()">Close</button>
+    </div>`;
+  document.getElementById('detailModal').classList.add('open');
+}
+function closeDetail() { document.getElementById('detailModal').classList.remove('open'); }
+document.getElementById('detailModal').addEventListener('click', function(e){ if(e.target===this) closeDetail(); });
 
-  function closeDetail() { document.getElementById('detailModal').classList.remove('open'); }
-  document.getElementById('detailModal').addEventListener('click', function(e){ if(e.target===this) closeDetail(); });
+// ══════════════════════════════════════════════════════════
+//  QR CODE
+// ══════════════════════════════════════════════════════════
+function renderQR() {
+  if(qrGenerated) return;
+  qrGenerated = true;
+  const base = window.location.href.split('?')[0];
+  const url  = base + '?report=true';
+  const qrWarning = document.getElementById('qrModeWarning');
+  if (qrWarning) {
+    let showWarning = false;
+    try {
+      const parsed = new URL(url, window.location.href);
+      const host = parsed.hostname.toLowerCase();
+      showWarning = !['http:', 'https:'].includes(parsed.protocol) || ['localhost', '127.0.0.1', '::1'].includes(host);
+    } catch (e) {
+      showWarning = true;
+    }
+    qrWarning.className = showWarning ? 'qr-warn show' : 'qr-warn';
+    qrWarning.textContent = showWarning
+      ? 'This QR code points to a local-only address. Host this page on a shared HTTP/HTTPS URL before expecting reports from other devices to appear on the desktop dashboard.'
+      : '';
+  }
+  document.getElementById('qrUrlDisplay').textContent = url;
+  new QRCode(document.getElementById('qrcode'), { text:url, width:164, height:164, colorDark:'#000000', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.H });
+}
+function downloadQR() {
+  setTimeout(()=>{
+    const canvas = document.querySelector('#qrcode canvas');
+    if(!canvas){ alert('QR code is still generating, please try again in a moment.'); return; }
+    const link = document.createElement('a');
+    link.download = 'securereport-qr.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }, 200);
+}
 </script>
 </body>
 </html>
