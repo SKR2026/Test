@@ -878,7 +878,7 @@ try {
 } catch(e) { console.warn('Firebase init failed — running in offline mode:', e); }
 const VISITS_COL = 'visits';
 const MAIL_DOC   = db.collection('config').doc('mailLogs');
-const USERS_COL  = db.collection('appUsers');  // each user = own doc → no 1 MB single-doc limit
+const USERS_DOC  = db.collection('config').doc('appUsers');
 const SETTINGS_DOC = db.collection('config').doc('appSettings');
 
 /* ══════════════════════════════════════════════════════════
@@ -950,8 +950,12 @@ const CRITS      = ['Critical','High','Medium','Low'];
 const STATUSES   = ['Scheduled','Confirmed','Completed','Cancelled'];
 
 const DEFAULT_USERS = {
-  admin:     { name:'Admin User',    initials:'AU', role:'Administrator',  access:'admin',      plant:null,      password:'admin123',   email:'admin@company.com' },
-  developer: { name:'Developer',     initials:'DV', role:'Administrator',  access:'admin',      plant:null,      password:'dev@2025',   email:'developer@internal.com', hidden:true },
+  admin:     { name:'Admin User',    initials:'AU', role:'Administrator',  access:'admin',      plant:null,      plants:null,               password:'admin123',   email:'admin@company.com' },
+  mgmt:      { name:'VP Operations', initials:'VO', role:'Top Management', access:'management', plant:null,      plants:null,               password:'mgmt123',    email:'vp@company.com' },
+  pune:      { name:'Rajesh Kumar',  initials:'RK', role:'Plant User',     access:'plant',      plant:'Pune',    plants:['Pune'],            password:'pune123',    email:'plant-pune@company.com' },
+  chennai:   { name:'Anita Sharma',  initials:'AS', role:'Plant User',     access:'plant',      plant:'Chennai', plants:['Chennai'],         password:'chennai123', email:'plant-chennai@company.com' },
+  ahmedabad: { name:'Pradeep Mehta', initials:'PM', role:'Plant User',     access:'plant',      plant:'Ahmedabad',plants:['Ahmedabad'],      password:'ahm123',   email:'plant-ahmedabad@company.com' },
+  developer: { name:'Developer',     initials:'DV', role:'Administrator',  access:'admin',      plant:null,      plants:null,               password:'dev@2025',   email:'developer@internal.com', hidden:true },
 };
 
 const SEED_DATA = [
@@ -1056,18 +1060,10 @@ function _persistUsers() {
   localStorage.setItem('pv_users_custom', JSON.stringify(customOnly));
   localStorage.setItem('pv_deleted_defaults', JSON.stringify(_deletedDefaultUsers));
 
-  // Push each user as its own Firestore document — avoids the 1 MB single-doc limit
-  // that caused silent save failures when user count grew beyond ~17 entries.
-  const batch = db.batch();
-  Object.entries(_usersData).forEach(([id, u]) => {
-    batch.set(USERS_COL.doc(id), { ...u, _id: id });
-  });
-  // Store deleted-defaults list in a meta doc
-  batch.set(USERS_COL.doc('__meta__'), { deletedDefaults: _deletedDefaultUsers });
-  batch.commit().catch(e => {
-    console.error('saveUsers Firestore error:', e);
-    toast('⚠ Save Error', 'Users could not be saved to the server: ' + (e?.message || String(e)), true);
-  });
+  // Push FULL user map to Firestore (including all custom users with passwords)
+  // This ensures users survive page reload/app restart — Firestore is the primary store
+  USERS_DOC.set({ users: _usersData, deletedDefaults: _deletedDefaultUsers })
+    .catch(e => console.error('saveUsers Firestore error:', e));
 }
 
 function saveUsers() { _persistUsers(); }
@@ -1115,61 +1111,43 @@ function initFirestoreListeners() {
     if (_appReady) updateBadges();
   }, e => console.error(e));
 
-  USERS_COL.onSnapshot(snapshot => {
-    // Each document is one user; __meta__ doc holds deletedDefaults
-    const firestoreUsers = {};
-    let fsDeleted = [];
-    snapshot.docs.forEach(doc => {
-      if (doc.id === '__meta__') {
-        fsDeleted = doc.data().deletedDefaults || [];
-      } else {
-        const data = { ...doc.data() };
-        delete data._id; // strip internal field
-        firestoreUsers[doc.id] = data;
-      }
-    });
+  USERS_DOC.onSnapshot(doc => {
+    if (doc.exists && doc.data().users) {
+      const firestoreUsers = doc.data().users;
+      // Sync deletion list from Firestore
+      const fsDeleted = doc.data().deletedDefaults || [];
+      fsDeleted.forEach(id => { if (!_deletedDefaultUsers.includes(id)) _deletedDefaultUsers.push(id); });
+      localStorage.setItem('pv_deleted_defaults', JSON.stringify(_deletedDefaultUsers));
 
-    // Sync deletion list from Firestore
-    fsDeleted.forEach(id => { if (!_deletedDefaultUsers.includes(id)) _deletedDefaultUsers.push(id); });
-    localStorage.setItem('pv_deleted_defaults', JSON.stringify(_deletedDefaultUsers));
-
-    // Build base: DEFAULT_USERS minus deleted ones
-    const base = {};
-    Object.entries(DEFAULT_USERS).forEach(([id, u]) => {
-      if (!_deletedDefaultUsers.includes(id)) base[id] = u;
-    });
-    // Merge Firestore users on top — Firestore is the source of truth for custom users
-    const merged = { ...base, ...firestoreUsers };
-    // Remove any user that was explicitly deleted
-    _deletedDefaultUsers.forEach(id => { delete merged[id]; });
-    // For default accounts, restore access/hidden but KEEP Firestore password if changed
-    Object.keys(DEFAULT_USERS).forEach(key => {
-      if (merged[key] && !_deletedDefaultUsers.includes(key)) {
-        const fsPass = firestoreUsers[key]?.password;
-        merged[key] = {
-          ...merged[key],
-          access: DEFAULT_USERS[key].access,
-          hidden: DEFAULT_USERS[key].hidden,
-          password: fsPass || DEFAULT_USERS[key].password,
-        };
-      }
-    });
-    _usersData = merged;
-    // Keep localStorage in sync with Firestore truth
-    const customOnly = {};
-    Object.entries(_usersData).forEach(([id, u]) => { if (!DEFAULT_USERS[id]) customOnly[id] = u; });
-    localStorage.setItem('pv_users_custom', JSON.stringify(customOnly));
-
-    // ★ FIX: If bootApp ran before this snapshot arrived (timing race),
-    //   and the custom user wasn't in localStorage yet, restore session now.
-    if (_appReady && !currentUser) {
-      const _sess = localStorage.getItem('pv_session');
-      if (_sess) {
-        try {
-          const { id: _sid } = JSON.parse(_sess);
-          if (_usersData[_sid]) activateSession(_usersData[_sid], _sid, _pendingVisitId || null);
-        } catch(e2) { console.warn('Delayed session restore:', e2); }
-      }
+      // Build base: DEFAULT_USERS minus deleted ones
+      const base = {};
+      Object.entries(DEFAULT_USERS).forEach(([id, u]) => {
+        if (!_deletedDefaultUsers.includes(id)) base[id] = u;
+      });
+      // Merge Firestore users on top — Firestore is the source of truth for custom users
+      const merged = { ...base, ...firestoreUsers };
+      // Remove any user that was explicitly deleted
+      _deletedDefaultUsers.forEach(id => { delete merged[id]; });
+      // FIX: For default accounts, restore access/hidden but KEEP Firestore password if it was changed
+      // Only restore password if the Firestore entry doesn't have one set (prevents lockout recovery issues)
+      Object.keys(DEFAULT_USERS).forEach(key => {
+        if (merged[key] && !_deletedDefaultUsers.includes(key)) {
+          // Keep whatever password is in Firestore (could be admin-changed); restore access + hidden from defaults
+          const fsPass = firestoreUsers[key]?.password;
+          merged[key] = {
+            ...merged[key],
+            access: DEFAULT_USERS[key].access,
+            hidden: DEFAULT_USERS[key].hidden,
+            // Use Firestore password if explicitly saved there, else fall back to default
+            password: fsPass || DEFAULT_USERS[key].password,
+          };
+        }
+      });
+      _usersData = merged;
+      // Keep localStorage in sync with Firestore truth
+      const customOnly = {};
+      Object.entries(_usersData).forEach(([id, u]) => { if (!DEFAULT_USERS[id]) customOnly[id] = u; });
+      localStorage.setItem('pv_users_custom', JSON.stringify(customOnly));
     }
   }, e => console.error(e));
 
@@ -1191,26 +1169,6 @@ function bootApp() {
     document.body.classList.add('light');
     document.getElementById('themeBtn').textContent = '☀️';
   }
-
-  // ★ FIX: Restore saved session so user stays logged in after page reload / restart
-  const savedSession = localStorage.getItem('pv_session');
-  if (savedSession) {
-    try {
-      const { id } = JSON.parse(savedSession);
-      const user = _usersData[id];
-      if (user) {
-        // Hide loader then activate the previous session
-        setTimeout(() => document.getElementById('pageLoader').classList.add('hidden'), 400);
-        activateSession(user, id, _pendingVisitId || null);
-        return; // skip showing login screen
-      }
-    } catch(e) {
-      console.warn('Session restore error:', e);
-    }
-    // Session stored but user not found (deleted/invalid) — clear it
-    localStorage.removeItem('pv_session');
-  }
-
   setTimeout(() => document.getElementById('pageLoader').classList.add('hidden'), 400);
 }
 
@@ -1441,14 +1399,22 @@ function updateBadges() {
   document.getElementById('recordsBadge').textContent = getVisible().length;
   document.getElementById('mailBadge').textContent    = loadMail().length;
 }
+/**
+ * getUserPlants(user)
+ * Returns an array of plants assigned to the given user.
+ * Supports both new `plants` (array) and legacy `plant` (string) fields.
+ */
+function getUserPlants(user) {
+  if (!user) return [];
+  if (Array.isArray(user.plants) && user.plants.length > 0) return user.plants;
+  if (user.plant) return [user.plant];
+  return [];
+}
+
 function getVisible() {
   const visits = loadVisits();
   if (!currentUser || currentUser.access !== 'plant') return visits;
-  // Support both multi-plant (plants array) and legacy single plant
-  const userPlants = Array.isArray(currentUser.plants) && currentUser.plants.length
-    ? currentUser.plants
-    : (currentUser.plant ? [currentUser.plant] : []);
-  if (!userPlants.length) return visits;
+  const userPlants = getUserPlants(currentUser);
   return visits.filter(v => userPlants.includes(v.plant));
 }
 
@@ -1492,8 +1458,11 @@ function renderDashboard(el) {
   const gc  = isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)';
 
   // Plant stats rows
-  const plantStatsHtml = currentUser.access !== 'plant' ? (() => {
-    const plantCards = PLANTS.map(plant => {
+  const userPlants = getUserPlants(currentUser);
+  const showPlantStats = currentUser.access !== 'plant' || userPlants.length > 1;
+  const plantStatsHtml = showPlantStats ? (() => {
+    const plantsToShow = currentUser.access !== 'plant' ? PLANTS : userPlants;
+    const plantCards = plantsToShow.map(plant => {
       const pv = visits.filter(v => v.plant === plant);
       const ptotal = pv.length;
       const pSched = pv.filter(v=>v.status==='Scheduled').length;
@@ -1537,22 +1506,14 @@ function renderDashboard(el) {
 
   <div class="section-header">
     <div class="section-title">Command Centre</div>
-    <div class="section-sub">${(()=>{
-      if (currentUser.access !== 'plant') return 'All plants';
-      const ups = Array.isArray(currentUser.plants) && currentUser.plants.length ? currentUser.plants : (currentUser.plant ? [currentUser.plant] : []);
-      return (ups.length ? ups.join(', ') : 'All') + ' plant' + (ups.length > 1 ? 's' : '');
-    })()} · ${total} total records</div>
+    <div class="section-sub">${currentUser.access === 'plant' ? getUserPlants(currentUser).join(', ') + ' plant(s)' : 'All plants'} · ${total} total records</div>
   </div>
 
   <div class="metric-grid">
     <div class="metric metric-clickable" style="--metric-accent:#e8c547" onclick="navToRecords()" title="View all records">
       <div class="metric-label">Total Visits</div>
       <div class="metric-value">${total}</div>
-      <div class="metric-sub">${(()=>{
-        if (currentUser.access !== 'plant') return 'All Plants';
-        const ups = Array.isArray(currentUser.plants) && currentUser.plants.length ? currentUser.plants : (currentUser.plant ? [currentUser.plant] : []);
-        return ups.length > 1 ? ups.join(' / ') : (ups[0] || 'All Plants');
-      })()} <span class="metric-arrow">→</span></div>
+      <div class="metric-sub">${currentUser.access==='plant'?getUserPlants(currentUser).join(', '):'All Plants'} <span class="metric-arrow">→</span></div>
     </div>
     <div class="metric metric-clickable" style="--metric-accent:#4a90e2" onclick="navToRecords('','Scheduled')" title="View scheduled visits">
       <div class="metric-label">Upcoming</div>
@@ -1737,18 +1698,9 @@ function buildTable(visits, actions) {
    FORM
 ══════════════════════════════════════════════════════════ */
 function renderForm(el, data) {
-  const _defaultPlant = (()=>{
-    if (currentUser.access !== 'plant') return PLANTS[0];
-    if (Array.isArray(currentUser.plants) && currentUser.plants.length) return currentUser.plants[0];
-    return currentUser.plant || PLANTS[0];
-  })();
-  const d = data || { plant:_defaultPlant, stay:'N', criticality:'Medium', category:'Business Development', status:'Scheduled' };
+  const d = data || { plant:currentUser.plant||'Pune', stay:'N', criticality:'Medium', category:'Business Development', status:'Scheduled' };
   const isEdit = !!data;
-  const _userPlants = currentUser.access === 'plant'
-    ? (Array.isArray(currentUser.plants) && currentUser.plants.length ? currentUser.plants : (currentUser.plant ? [currentUser.plant] : []))
-    : PLANTS;
-  // Disable plant select only if user has exactly 1 assigned plant (no choice)
-  const plantDisabled = (currentUser.access==='plant' && _userPlants.length <= 1) ? 'disabled' : '';
+  const plantDisabled = currentUser.access==='plant' ? 'disabled' : '';
   el.innerHTML = `
   <div class="form-panel">
     <div class="form-panel-title">${isEdit?'Edit Visit Record':'New Customer Visit'}<span>${isEdit?'Updating · '+xe(d.company):'Entry Form'}</span></div>
@@ -1757,12 +1709,7 @@ function renderForm(el, data) {
       <div class="fg"><label>Confirmation Date <span class="req">*</span></label><input type="date" id="f_confirmDate" value="${d.confirmDate||''}"></div>
       <div class="fg"><label>Visit Date — From <span class="req">*</span></label><input type="date" id="f_visitDate" value="${d.visitDate||''}" onchange="validateVisitDateRange()"></div>
       <div class="fg"><label>Visit Date — To <span style="font-size:10px;color:var(--slate);font-weight:400">(optional, multi-day)</span></label><input type="date" id="f_visitDateEnd" value="${d.visitDateEnd||''}" onchange="validateVisitDateRange()"></div>
-      <div class="fg"><label>Plant <span class="req">*</span></label><select id="f_plant" ${plantDisabled}>${(()=>{
-        const userPlants = currentUser.access === 'plant'
-          ? (Array.isArray(currentUser.plants) && currentUser.plants.length ? currentUser.plants : (currentUser.plant ? [currentUser.plant] : PLANTS))
-          : PLANTS;
-        return userPlants.map(p=>`<option${d.plant===p?' selected':''}>${p}</option>`).join('');
-      })()}</select></div>
+      <div class="fg"><label>Plant <span class="req">*</span></label><select id="f_plant" ${plantDisabled}>${PLANTS.map(p=>`<option${d.plant===p?' selected':''}>${p}</option>`).join('')}</select></div>
     </div>
     <div class="form-grid" style="margin-top:16px">
       <div class="form-section-label">Visitor Information</div>
@@ -1843,12 +1790,7 @@ function collectForm() {
   }
   const _vdStart = v('f_visitDate'), _vdEnd = v('f_visitDateEnd');
   if (_vdEnd && _vdEnd < _vdStart) { toast('Invalid Date Range',"Visit 'To' date cannot be before 'From' date.",true); document.getElementById('f_visitDateEnd')?.focus(); return null; }
-  return { confirmDate:v('f_confirmDate'), visitDate:v('f_visitDate'), visitDateEnd:v('f_visitDateEnd')||'', plant:(()=>{
-    if (currentUser.access !== 'plant') return v('f_plant');
-    const userPlants = Array.isArray(currentUser.plants) && currentUser.plants.length ? currentUser.plants : (currentUser.plant ? [currentUser.plant] : []);
-    // If only one plant assigned, use it directly; otherwise use the dropdown selection
-    return userPlants.length === 1 ? userPlants[0] : v('f_plant');
-  })(), company:v('f_company').trim(), rep:v('f_rep').trim(), category:v('f_category'), criticality:v('f_criticality'), focus:v('f_focus').trim(), coordinator:v('f_coordinator').trim(), agenda:v('f_agenda').trim(), attendees:v('f_attendees').trim(), meetingRoom:v('f_meetingRoom').trim(), stay:v('f_stay'), hotel:v('f_hotel').trim(), remarks:v('f_remarks').trim(), status:v('f_status') };
+  return { confirmDate:v('f_confirmDate'), visitDate:v('f_visitDate'), visitDateEnd:v('f_visitDateEnd')||'', plant:currentUser.access==='plant'?currentUser.plant:v('f_plant'), company:v('f_company').trim(), rep:v('f_rep').trim(), category:v('f_category'), criticality:v('f_criticality'), focus:v('f_focus').trim(), coordinator:v('f_coordinator').trim(), agenda:v('f_agenda').trim(), attendees:v('f_attendees').trim(), meetingRoom:v('f_meetingRoom').trim(), stay:v('f_stay'), hotel:v('f_hotel').trim(), remarks:v('f_remarks').trim(), status:v('f_status') };
 }
 
 function saveVisit(editId) {
@@ -3132,22 +3074,16 @@ function _umDraw(el) {
   const all = Object.entries(_usersData).filter(([,u]) => !u.hidden);
   const q = _umQ.trim().toLowerCase();
   const filt = all.filter(([id,u]) => {
-    const plantStr = Array.isArray(u.plants) && u.plants.length ? u.plants.join(' ') : (u.plant||'');
-    if (q && !((u.name||'')+' '+(u.email||'')+' '+id+' '+plantStr).toLowerCase().includes(q)) return false;
+    if (q && !((u.name||'')+' '+(u.email||'')+' '+id+' '+(u.plant||'')).toLowerCase().includes(q)) return false;
     if (_umRole  !== 'all' && u.access !== _umRole)  return false;
-    if (_umPlant !== 'all') {
-      const userPlants = Array.isArray(u.plants) && u.plants.length ? u.plants : (u.plant ? [u.plant] : []);
-      if (!userPlants.includes(_umPlant)) return false;
-    }
+    if (_umPlant !== 'all' && !getUserPlants(u).includes(_umPlant)) return false;
     return true;
   });
   const pages = Math.max(1, Math.ceil(filt.length/_UM_PER));
   if (_umPage>pages) _umPage=pages;
   const slice = filt.slice((_umPage-1)*_UM_PER, _umPage*_UM_PER);
-  const plantOpts = [...new Set(all.flatMap(([,u])=>{
-    if (Array.isArray(u.plants) && u.plants.length) return u.plants;
-    return u.plant ? [u.plant] : [];
-  }))].sort().map(p=>`<option value="${p}" ${_umPlant===p?'selected':''} >${p}</option>`).join('');
+  const plantOpts = [...new Set(all.map(([,u])=>u.plant).filter(Boolean))].sort()
+    .map(p=>`<option value="${p}" ${_umPlant===p?'selected':''} >${p}</option>`).join('');
 
   const rows = slice.length ? slice.map(([id,u])=>`
     <tr class="user-table-row">
@@ -3157,10 +3093,11 @@ function _umDraw(el) {
           <div style="font-size:11px;color:var(--slate)">${xe(u.email||'')}</div></div>
       </div></td>
       <td><code style="font-size:11px;background:var(--navy4);padding:2px 8px;border-radius:4px">${xe(id)}</code></td>
-      <td>${u.access==='admin'?'<span class="badge badge-admin">Admin</span>':u.access==='management'?'<span class="badge badge-gold">Management</span>':'<span class="badge badge-medium">Plant User</span>'}</td>
-      <td>${(()=>{
-        const plants = Array.isArray(u.plants) && u.plants.length ? u.plants : (u.plant ? [u.plant] : []);
-        return plants.length ? plants.map(p=>`<span class="user-plant-badge" style="margin-right:3px">${xe(p)}</span>`).join('') : `<span style="color:var(--slate);font-size:11px">All</span>`;
+      <td>${u.access==='admin'?'<span class="badge badge-admin">Admin</span>':u.access==='management'?'<span class="badge badge-gold">Management</span>':`<span class="badge badge-medium">Plant User${getUserPlants(u).length>1?' ('+getUserPlants(u).length+' plants)':''}</span>`}</td>
+      <td>${(() => {
+        const up = getUserPlants(u);
+        if (!up.length) return '<span style="color:var(--slate);font-size:11px">All</span>';
+        return up.map(p=>`<span class="user-plant-badge" style="margin:1px 2px;display:inline-block">${xe(p)}</span>`).join('');
       })()}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="openEditUser('${id}')">Edit</button>
@@ -3253,16 +3190,19 @@ function userForm(id, u) {
       </select>
     </div>
     <div class="fg" id="uf_plant_wrap" style="${(u?.access==='plant'||!u)?'':'display:none'}">
-      <label>Plants <span class="req">*</span> <span style="font-size:10px;color:var(--slate);font-weight:400">(select one or more)</span></label>
-      <div id="uf_plant_checks" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;padding:10px 12px;background:var(--navy3);border:1px solid var(--border);border-radius:var(--radius)">
-        ${(()=>{
-          const sel = Array.isArray(u?.plants) && u.plants.length ? u.plants : (u?.plant ? [u.plant] : []);
-          return PLANTS.map(p=>`
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:400;color:var(--white2);white-space:nowrap">
-              <input type="checkbox" name="uf_plant_cb" value="${p}" ${sel.includes(p)?'checked':''} style="accent-color:var(--gold);width:14px;height:14px"> ${p}
-            </label>`).join('');
-        })()}
+      <label>Plant Assignment <span class="req">*</span></label>
+      <div id="uf_plants_list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+        ${PLANTS.map(p => {
+          const userPlantsArr = getUserPlants(u);
+          const chk = userPlantsArr.includes(p) ? 'checked' : (!u && PLANTS.indexOf(p)===0 ? '' : '');
+          return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:var(--navy4);border:1px solid var(--border);border-radius:8px;font-size:13px;user-select:none;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold-bdr)'" onmouseout="this.style.borderColor=''">
+            <input type="checkbox" name="uf_plant_cb" value="${p}" ${chk}
+              style="accent-color:var(--gold);width:14px;height:14px;cursor:pointer">
+            <span style="color:var(--white)">${p}</span>
+          </label>`;
+        }).join('')}
       </div>
+      <div style="font-size:11px;color:var(--slate);margin-top:6px">✓ Select one or more plants. User will see records from all assigned plants.</div>
     </div>
     <div class="fg"><label>Password <span class="req">${isEdit?'(leave blank to keep)':'*'}</span></label><input type="password" id="uf_pass" placeholder="${isEdit?'New password (optional)':'Set a password'}"></div>
     <div class="fg" style="grid-column:1/-1">
@@ -3278,7 +3218,13 @@ function userForm(id, u) {
 function togglePlantField() {
   const access = document.getElementById('uf_access')?.value;
   const wrap = document.getElementById('uf_plant_wrap');
-  if (wrap) wrap.style.display = access === 'plant' ? '' : 'none';
+  if (wrap) {
+    wrap.style.display = access === 'plant' ? '' : 'none';
+    // Clear all checkboxes when switching away from plant role
+    if (access !== 'plant') {
+      wrap.querySelectorAll('input[name="uf_plant_cb"]').forEach(cb => cb.checked = false);
+    }
+  }
 }
 
 function saveUser(editId) {
@@ -3288,10 +3234,11 @@ function saveUser(editId) {
   const initials= (document.getElementById('uf_initials')?.value||'').trim().toUpperCase() || name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   const email   = (document.getElementById('uf_email')?.value||'').trim();
   const access  = document.getElementById('uf_access')?.value || 'plant';
-  const plants  = access === 'plant'
-    ? Array.from(document.querySelectorAll('input[name="uf_plant_cb"]:checked')).map(cb => cb.value)
-    : [];
-  const plant   = plants.length === 1 ? plants[0] : (plants[0] || null); // backward-compat single
+  let plants = null;
+  if (access === 'plant') {
+    plants = [...document.querySelectorAll('input[name="uf_plant_cb"]:checked')].map(cb => cb.value);
+  }
+  const plant   = plants && plants.length > 0 ? plants[0] : null;
   const pass    = (document.getElementById('uf_pass')?.value||'').trim();
   const errEl   = document.getElementById('uf_err');
   errEl.classList.remove('show'); errEl.textContent='';
@@ -3300,14 +3247,14 @@ function saveUser(editId) {
   if (!isEdit && !idVal) { errEl.textContent='Username is required.'; errEl.classList.add('show'); return; }
   if (!isEdit && _usersData[idVal]) { errEl.textContent='Username already exists.'; errEl.classList.add('show'); return; }
   if (!isEdit && pass.length < 6) { errEl.textContent='Password must be at least 6 characters.'; errEl.classList.add('show'); return; }
-  if (access === 'plant' && plants.length === 0) { errEl.textContent='Please select at least one plant.'; errEl.classList.add('show'); return; }
+  if (access === 'plant' && (!plants || plants.length === 0)) { errEl.textContent='Please select at least one plant.'; errEl.classList.add('show'); return; }
 
   const existing = isEdit ? (_usersData[editId]||{}) : {};
   _usersData[idVal] = {
     ...existing,
     name, initials, email, access,
-    plant: plant || null,           // keep for backward compat (first plant)
-    plants: plants.length ? plants : null,  // new multi-plant array
+    plant:  plant  || null,
+    plants: plants || null,
     role: access==='admin'?'Administrator':access==='management'?'Top Management':'Plant User',
     password: (pass.length>=6) ? pass : (existing.password||''),
   };
@@ -3350,7 +3297,7 @@ function exportUsersCSV() {
     u.initials || '',
     u.email || '',
     u.access === 'admin' ? 'Administrator' : u.access === 'management' ? 'Top Management' : 'Plant User',
-    (Array.isArray(u.plants) && u.plants.length ? u.plants.join(';') : (u.plant || 'All Plants')),
+    getUserPlants(u).join(', ') || 'All Plants',
   ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
   const csv = [headers.join(','), ...rows].join('\n');
   const a = document.createElement('a');
@@ -3382,7 +3329,7 @@ function exportUsersPDF() {
       </td>
       <td style="font-size:11px;color:#555"><code style="background:#f4f4fb;padding:2px 8px;border-radius:4px;font-size:11px">${id}</code></td>
       <td><span style="background:${rc}20;color:${rc};border:1px solid ${rc}55;border-radius:50px;padding:2px 10px;font-size:10px;font-weight:600;white-space:nowrap">${roleLabel}</span></td>
-      <td style="font-size:11px;color:#555">${(Array.isArray(u.plants) && u.plants.length ? u.plants.join(', ') : (u.plant || '')) || '<span style="color:#aaa">All Plants</span>'}</td>
+      <td style="font-size:11px;color:#555">${getUserPlants(u).length > 0 ? getUserPlants(u).map(p=>`<span style="display:inline-block;background:${rc}15;border:1px solid ${rc}44;border-radius:50px;padding:1px 8px;font-size:10px;color:${rc};margin:1px 2px">${p}</span>`).join('') : '<span style="color:#aaa">All Plants</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -3493,7 +3440,7 @@ function renderUserUploadPhase1() {
     </div>
     <div style="margin-top:8px;font-size:11px;color:var(--slate)">
       <strong style="color:var(--slate2)">role</strong> accepts: <code style="background:var(--navy4);padding:1px 5px;border-radius:3px">admin</code> <code style="background:var(--navy4);padding:1px 5px;border-radius:3px">management</code> <code style="background:var(--navy4);padding:1px 5px;border-radius:3px">plant</code> &nbsp;·&nbsp;
-      <strong style="color:var(--slate2)">plant</strong> required when role=plant — use <strong style="color:var(--gold)">semicolons</strong> for multiple plants (e.g. <code style="background:var(--navy4);padding:1px 5px;border-radius:3px">Pune;Chennai</code>)
+      <strong style="color:var(--slate2)">plant</strong> required when role=plant — supports multiple plants comma-separated (e.g. <code style="background:var(--navy4);padding:1px 5px;border-radius:3px">Pune,Chennai</code>)
     </div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
@@ -3506,7 +3453,7 @@ function downloadUserTemplate() {
   const header = USER_UPLOAD_COLS.join(',');
   const example = [
     ['ramu_pune','Ramesh Kumar','RK','ramu@company.com','plant','Pune','plant@2025'],
-    ['suresh_multi','Suresh Patel','SP','suresh@company.com','plant','Pune;Chennai','plant@2025'],
+    ['ramu_multi','Suresh Verma','SV','suresh@company.com','plant','Pune,Chennai','plant@2025'],
     ['priya_mgmt','Priya Sharma','PS','priya@company.com','management','','mgmt@2025'],
   ].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
   const a = document.createElement('a');
@@ -3564,17 +3511,11 @@ function parseUserUploadCSV(text) {
     if (!r.password || r.password.length < 6) r._errors.push('Password must be ≥6 chars');
     if (!USER_ROLES_VALID.includes(r.role)) r._errors.push('Role must be: admin, management, or plant');
     if (r.role === 'plant' && !r.plant) r._errors.push('Plant is required for role=plant');
-    // Case-insensitive plant match — also normalise to canonical casing; supports semicolon-separated multi-plant
     if (r.role === 'plant' && r.plant) {
-      const rawPlants = r.plant.split(';').map(p=>p.trim()).filter(Boolean);
-      const resolved = [], bad = [];
-      rawPlants.forEach(rp => {
-        const m = PLANTS.find(p => p.toLowerCase() === rp.toLowerCase());
-        if (m) resolved.push(m);
-        else bad.push(rp);
-      });
-      if (bad.length) r._errors.push('Plant(s) not found: "' + bad.join(', ') + '". Available: ' + PLANTS.join(', '));
-      else r.plant = resolved.join(';'); // normalised
+      const plantList = r.plant.split(',').map(p=>p.trim()).filter(Boolean);
+      const invalidPlants = plantList.filter(p => !PLANTS.includes(p));
+      if (invalidPlants.length) r._errors.push(`Plant(s) not found: ${invalidPlants.join(', ')}`);
+      else r.plants = plantList;  // store resolved plants array on row
     }
     if (!r._errors.length) r._valid = true;
     return r;
@@ -3608,7 +3549,7 @@ function renderUserUploadPhase2() {
       <td style="font-size:12px">${xe(r.name)}</td>
       <td style="font-size:11px;color:var(--slate)">${xe(r.email)}</td>
       <td><span style="color:${ROLE_C[r.role]||'var(--slate)'};font-size:11px;font-weight:600">${r.role||'—'}</span></td>
-      <td style="font-size:11px;color:var(--slate)">${r.plant||'—'}</td>
+      <td style="font-size:11px;color:var(--slate)">${r.plants && r.plants.length > 1 ? r.plants.join(', ') : (r.plant||'—')}</td>
       <td>
         <button onclick="toggleUserUploadRow(${r._idx})" style="background:none;border:1px solid var(--border2);border-radius:4px;padding:1px 8px;font-size:10px;cursor:pointer;color:var(--slate2)">
           ${skipped?'Include':'Skip'}
@@ -3681,16 +3622,14 @@ async function executeUserImport() {
   let imported = 0, skippedDup = 0;
   toImport.forEach(r => {
     if (_usersData[r.username]) skippedDup++;  // overwrite existing
-    const importedPlants = r.role === 'plant' && r.plant
-      ? r.plant.split(';').map(p=>p.trim()).filter(Boolean)
-      : [];
+    const importedPlants = r.role === 'plant' ? (r.plants || (r.plant ? [r.plant] : [])) : null;
     _usersData[r.username] = {
       name: r.name,
       initials: r.initials,
       email: r.email,
       access: r.role,
-      plant: importedPlants[0] || null,          // backward compat
-      plants: importedPlants.length ? importedPlants : null,  // multi-plant
+      plant:  importedPlants && importedPlants.length > 0 ? importedPlants[0] : null,
+      plants: importedPlants || null,
       role: r.role === 'admin' ? 'Administrator' : r.role === 'management' ? 'Top Management' : 'Plant User',
       password: r.password,
     };
@@ -3878,11 +3817,12 @@ function renderRecords(el) {
   }).filter(Boolean))].sort();
 
   // Plant tabs (admin/management only)
-  const plantTabsHtml = currentUser.access !== 'plant' ? `
+  const _curUserPlants = getUserPlants(currentUser);
+  const plantTabsHtml = (currentUser.access !== 'plant' || _curUserPlants.length > 1) ? `
   <div class="filter-tab-row">
     <span class="filter-tab-label">🏭 Plant</span>
-    <button class="ftab plant-tab${!pf.plant?' active':''}" onclick="setPlantFilter('')">All</button>
-    ${PLANTS.map(p=>`<button class="ftab plant-tab${pf.plant===p?' active':''}" onclick="setPlantFilter('${p}')">${p}</button>`).join('')}
+    <button class="ftab plant-tab${!pf.plant?' active':''}" onclick="setPlantFilter('')">${currentUser.access==='plant'?'All My Plants':'All'}</button>
+    ${(currentUser.access !== 'plant' ? PLANTS : _curUserPlants).map(p=>`<button class="ftab plant-tab${pf.plant===p?' active':''}" onclick="setPlantFilter('${p}')">${p}</button>`).join('')}
   </div>` : '';
 
   // Month tabs
@@ -3999,7 +3939,7 @@ function renderPlantSettings(el) {
       <button class="btn btn-gold btn-sm" onclick="openAddPlant()">+ Add Plant</button>
     </div>
     <div class="alert alert-info" style="margin-bottom:16px;font-size:12px">
-      🏭 Plants defined here appear in the visit form, user assignments, and dashboard. Deleting a plant does not remove existing visit records — it only removes it from future entries.
+      🏭 Plants defined here appear in the visit form, user assignments, and dashboard. Plant users can be assigned to <strong>one or more plants</strong> — they will see records from all their assigned plants. Deleting a plant does not remove existing visit records — it only removes it from future entries.
     </div>
     <div class="table-wrap">
       <table>
@@ -5013,7 +4953,7 @@ function downloadUploadTemplate() {
     'High',                 // criticality
     'New Order Discussion', // focus
     'Scheduled',            // status
-    'Plant Coordinator',    // coordinator
+    'Rajesh Kumar',         // coordinator
     'Engineering Head, CFO',// attendees
     'Y',                    // stay
     'Marriott Pune',        // hotel
