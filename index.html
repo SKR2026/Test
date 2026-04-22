@@ -1159,6 +1159,18 @@ function initFirestoreListeners() {
     const customOnly = {};
     Object.entries(_usersData).forEach(([id, u]) => { if (!DEFAULT_USERS[id]) customOnly[id] = u; });
     localStorage.setItem('pv_users_custom', JSON.stringify(customOnly));
+
+    // ★ FIX: If bootApp ran before this snapshot arrived (timing race),
+    //   and the custom user wasn't in localStorage yet, restore session now.
+    if (_appReady && !currentUser) {
+      const _sess = localStorage.getItem('pv_session');
+      if (_sess) {
+        try {
+          const { id: _sid } = JSON.parse(_sess);
+          if (_usersData[_sid]) activateSession(_usersData[_sid], _sid, _pendingVisitId || null);
+        } catch(e2) { console.warn('Delayed session restore:', e2); }
+      }
+    }
   }, e => console.error(e));
 
   SETTINGS_DOC.onSnapshot(doc => {
@@ -1179,6 +1191,26 @@ function bootApp() {
     document.body.classList.add('light');
     document.getElementById('themeBtn').textContent = '☀️';
   }
+
+  // ★ FIX: Restore saved session so user stays logged in after page reload / restart
+  const savedSession = localStorage.getItem('pv_session');
+  if (savedSession) {
+    try {
+      const { id } = JSON.parse(savedSession);
+      const user = _usersData[id];
+      if (user) {
+        // Hide loader then activate the previous session
+        setTimeout(() => document.getElementById('pageLoader').classList.add('hidden'), 400);
+        activateSession(user, id, _pendingVisitId || null);
+        return; // skip showing login screen
+      }
+    } catch(e) {
+      console.warn('Session restore error:', e);
+    }
+    // Session stored but user not found (deleted/invalid) — clear it
+    localStorage.removeItem('pv_session');
+  }
+
   setTimeout(() => document.getElementById('pageLoader').classList.add('hidden'), 400);
 }
 
