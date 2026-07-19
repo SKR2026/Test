@@ -3388,38 +3388,68 @@ function renderReminders(){
 //  TEAM
 // ═══════════════════════════════════════════════════════════════════════
 function renderTeam(){
-  if(mode==='user'){showPanel('user');return;}
-  const st=getScopedTasks();
-  // Normalise to lowercase so mixed-case duplicates are merged
-  const allEmails=[...new Set(st.map(t=>t.assignee.toLowerCase()))];
+  // Use ALL tasks (not scoped) so we see the full team picture
+  const allTasks = (plantOwnerAuthenticated && currentPlantSession)
+    ? tasks.filter(t => {
+        const owners = (currentPlantSession.owners||[]).map(o=>o.toLowerCase());
+        return owners.includes((t.assignee||'').toLowerCase()) || (t.plant && t.plant === currentPlantSession.id);
+      })
+    : tasks;
 
-  // Filter: in member-view show only that member; otherwise show only members
-  // to whom the current account holder (currentSession) has assigned tasks.
-  let filteredEmails;
+  const me = currentSession ? currentSession.email.toLowerCase() : null;
+
+  // Build the set of relevant member emails:
+  // 1. Members I assigned tasks TO  (assignedBy === me)
+  // 2. Members who assigned tasks TO me  (assignee === me, assignedBy === someone else)
+  // 3. Superadmin sees everyone
+  let memberEmailSet;
   if(_memberViewActive && _memberViewEmail) {
-    filteredEmails = allEmails.filter(e => e === _memberViewEmail.toLowerCase());
-  } else if(currentSession) {
-    const me = currentSession.email.toLowerCase();
-    // Tasks assigned BY me — these define which members are "my team"
-    const assignedByMeTasks = st.filter(t => (t.assignedBy||'').toLowerCase() === me);
-    const assignedByMeEmails = new Set(assignedByMeTasks.map(t=>t.assignee.toLowerCase()));
-    // Also include me
-    assignedByMeEmails.add(me);
-    filteredEmails = allEmails.filter(e => assignedByMeEmails.has(e));
+    // When viewing a specific member, show only them
+    memberEmailSet = new Set([_memberViewEmail.toLowerCase()]);
+  } else if(me) {
+    memberEmailSet = new Set();
+    allTasks.forEach(t => {
+      const assignee   = (t.assignee||'').toLowerCase();
+      const assignedBy = (t.assignedBy||'').toLowerCase();
+      // Tasks I assigned to someone → that someone is in my team
+      if(assignedBy === me) memberEmailSet.add(assignee);
+      // Tasks someone assigned to me → that someone is in my team
+      if(assignee === me && assignedBy && assignedBy !== me) memberEmailSet.add(assignedBy);
+    });
+    // Always include myself
+    memberEmailSet.add(me);
   } else {
-    filteredEmails = allEmails; // superadmin sees all
+    // Superadmin — all unique assignees
+    memberEmailSet = new Set(allTasks.map(t=>(t.assignee||'').toLowerCase()).filter(Boolean));
   }
 
-  const uniqueEmails = filteredEmails;
-  const members=uniqueEmails.map(email=>{
-    const myTasks=st.filter(t=>t.assignee.toLowerCase()===email);
+  const uniqueEmails = [...memberEmailSet].filter(Boolean);
+
+  const members = uniqueEmails.map(email => {
+    // Tasks relevant to this member (assigned to them OR assigned by them)
+    const memberTasks = allTasks.filter(t =>
+      (t.assignee||'').toLowerCase() === email ||
+      (t.assignedBy||'').toLowerCase() === email
+    );
+    // Tasks specifically assigned TO this member (for stats)
+    const assignedToThem = allTasks.filter(t => (t.assignee||'').toLowerCase() === email);
     const nick = _nickCache[email] || email.split('@')[0];
-    return{email,nick,total:myTasks.length,done:myTasks.filter(t=>t.status==='Done').length,inprog:myTasks.filter(t=>t.status==='In Progress').length,overdue:myTasks.filter(isOverdue).length};
+    return {
+      email, nick,
+      total:   assignedToThem.length,
+      done:    assignedToThem.filter(t=>t.status==='Done').length,
+      inprog:  assignedToThem.filter(t=>t.status==='In Progress').length,
+      overdue: assignedToThem.filter(isOverdue).length,
+      // Relationship label
+      iAssigned:    allTasks.some(t=>(t.assignedBy||'').toLowerCase()===me && (t.assignee||'').toLowerCase()===email),
+      theyAssigned: me && email !== me && allTasks.some(t=>(t.assignee||'').toLowerCase()===me && (t.assignedBy||'').toLowerCase()===email),
+    };
   });
+
   const c=document.getElementById('content');
   c.innerHTML=`
   <div class="panel-title fade-in">Team Overview${_memberViewActive&&_memberViewNick?' — 👤 '+esc(_memberViewNick):''}</div>
-  <div class="panel-sub">${members.length} active members${plantOwnerAuthenticated&&currentPlantSession?' in 🏭 '+esc(currentPlantSession.name):' across all projects'}${currentSession&&!_memberViewActive?' assigned by you':''}</div>
+  <div class="panel-sub">${members.length} member(s) in your team${plantOwnerAuthenticated&&currentPlantSession?' — 🏭 '+esc(currentPlantSession.name):''}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px" class="fade-in">
   ${members.map(m=>{
     const pct=m.total?Math.round(m.done/m.total*100):0;
@@ -3428,16 +3458,20 @@ function renderTeam(){
     const colors=['var(--accent)','var(--purple)','var(--green)','var(--amber)','var(--cyan)'];
     const color=colors[m.email.charCodeAt(0)%colors.length];
     const isSelf = currentSession && m.email.toLowerCase() === currentSession.email.toLowerCase();
+    // Relationship tags
+    const relTags = [];
+    if(isSelf) relTags.push('<span style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(91,141,238,.12);border:1px solid rgba(91,141,238,.25);border-radius:4px;padding:1px 6px;">You</span>');
+    if(!isSelf && m.iAssigned) relTags.push('<span style="font-size:10px;font-weight:700;color:var(--green);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);border-radius:4px;padding:1px 6px;">Assigned by you</span>');
+    if(!isSelf && m.theyAssigned) relTags.push('<span style="font-size:10px;font-weight:700;color:var(--purple);background:rgba(179,102,255,.1);border:1px solid rgba(179,102,255,.25);border-radius:4px;padding:1px 6px;">Assigned you</span>');
     return`<div class="card" style="border-top:3px solid ${color}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         <div style="width:44px;height:44px;border-radius:50%;background:${color}22;border:2px solid ${color}44;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:${color};flex-shrink:0">${initials}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:14px;color:var(--text);display:flex;align-items:center;gap:6px;">
-            ${displayNick}
-            ${isSelf?'<span style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(91,141,238,.12);border:1px solid rgba(91,141,238,.25);border-radius:4px;padding:1px 6px;">You</span>':'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px;border-radius:5px;" onclick="enterMemberImpersonation(\'${m.email}\',\'${displayNick}\')">👁 View</button>'}
-          </div>
+          <div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:4px;">${displayNick}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">${relTags.join('')}</div>
           <div style="font-size:11px;color:var(--text3);word-break:break-all">${m.email}</div>
         </div>
+        ${!isSelf?`<button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px;flex-shrink:0;" onclick="enterMemberImpersonation('${m.email}','${displayNick}')">👁 View</button>`:''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
         <div style="text-align:center;background:var(--bg);border-radius:8px;padding:8px;cursor:pointer;border:1px solid var(--accent);transition:transform .15s;" title="View all tasks for ${m.email}" onclick="goToTasksFilteredByAssignee('All','${m.email}')">
@@ -5180,16 +5214,13 @@ function getScopedTasks(){
   // Superadmin — sees everything
   if(adminAuthenticated && !currentSession) return tasks;
 
-  // Admin / User — All Tasks = assigned BY me OR assigned TO me,
-  // AND tasks assigned TO any group member (for team visibility)
+  // Admin / User — show tasks assigned TO me OR BY me
   if(currentSession){
     const me = currentSession.email.toLowerCase();
-    const myMembers = (_myGroupMemberEmails || []).map(e => e.toLowerCase());
-    return tasks.filter(t => {
-      const assignee = (t.assignee||'').toLowerCase();
-      const assignedBy = (t.assignedBy||'').toLowerCase();
-      return assignee === me || assignedBy === me || myMembers.includes(assignee);
-    });
+    return tasks.filter(t =>
+      (t.assignee||'').toLowerCase() === me ||
+      (t.assignedBy||'').toLowerCase() === me
+    );
   }
 
   return tasks;
