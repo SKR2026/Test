@@ -1932,11 +1932,16 @@ function _updateMyTasksCard(allTasks){
     return;
   }
 
-  // Admin / user mode
-  const selfEmail = mode==='user' ? (userEmail||'') : (localStorage.getItem('self_email')||'');
+  // Resolve my email across all roles
+  let selfEmail = '';
+  if(mode==='user') selfEmail = userEmail||'';
+  else if(currentSession) selfEmail = currentSession.email.toLowerCase();
+  else if(adminAuthenticated) selfEmail = (localStorage.getItem('admin_notify_email')||'').trim().toLowerCase();
+  else selfEmail = localStorage.getItem('self_email')||'';
+
   if(!selfEmail){
     valEl.textContent='—';
-    if(subEl){ subEl.textContent='Set identity in My Tasks'; subEl.style.color='var(--text3)'; }
+    if(subEl){ subEl.textContent='Set Admin Email in Settings → Email Integration'; subEl.style.color='var(--amber)'; }
     return;
   }
   const myT=filtered.filter(t=>(t.assignee||'').toLowerCase()===selfEmail.toLowerCase());
@@ -2325,13 +2330,13 @@ function _rebuildDashStats(){
   const cards = document.querySelectorAll('#dash-stats-grid .stat-card');
   if(cards.length>=8){
     cards[0].querySelector('.stat-value').textContent = total;
+    const _rebuildMe = _getMyEmail();
     cards[1].querySelector('.stat-value').textContent = filtered.filter(t=>{
-      const selfEmail=mode==='user'?(userEmail||''):(localStorage.getItem('self_email')||'');
       if(plantOwnerAuthenticated&&currentPlantSession){
         const oe=(currentPlantSession.owners||[]).map(e=>e.toLowerCase());
         return oe.includes((t.assignee||'').toLowerCase());
       }
-      return selfEmail&&(t.assignee||'').toLowerCase()===selfEmail.toLowerCase();
+      return _rebuildMe && (t.assignee||'').toLowerCase()===_rebuildMe;
     }).length;
     // also update sub-label
     _updateMyTasksCard(getDashScopedTasks());
@@ -2448,7 +2453,7 @@ function renderDashboard(){
     </div>
     <div class="stat-card" style="--c:var(--purple);cursor:pointer;grid-column:span 1;position:relative;overflow:visible;" id="my-tasks-stat-card" onclick="goToMyTasksFiltered()" title="View My Tasks">
       <div class="stat-icon">👤</div>
-      <div class="stat-value" id="dash-my-tasks-val">—</div>
+      <div class="stat-value" id="dash-my-tasks-val">${(()=>{const me=_getMyEmail();if(!me)return '—';if(plantOwnerAuthenticated&&currentPlantSession){const oe=(currentPlantSession.owners||[]).map(e=>e.toLowerCase());return scopedTasks.filter(t=>oe.includes((t.assignee||'').toLowerCase())).length;}return scopedTasks.filter(t=>(t.assignee||'').toLowerCase()===me).length;})()}</div>
       <div class="stat-label">My Tasks</div>
       <div id="dash-my-tasks-sub" style="font-size:10px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
     </div>
@@ -5464,12 +5469,26 @@ function getMyOwnTasks(){
     const owners = (currentPlantSession.owners||[]).map(o=>o.toLowerCase());
     return tasks.filter(t => owners.includes((t.assignee||'').toLowerCase()));
   }
-  if(adminAuthenticated && !currentSession) return tasks; // superadmin: My Tasks = all
+  // Superadmin: use admin_notify_email as own identity (set in Settings)
+  if(adminAuthenticated && !currentSession){
+    const saEmail = (localStorage.getItem('admin_notify_email')||'').trim().toLowerCase();
+    if(saEmail) return tasks.filter(t => (t.assignee||'').toLowerCase() === saEmail);
+    return []; // no identity set — return empty, prompt in My Tasks panel
+  }
   if(currentSession){
     const me = currentSession.email.toLowerCase();
     return tasks.filter(t => (t.assignee||'').toLowerCase() === me);
   }
   return tasks;
+}
+
+// Helper: get "my" email for any role (superadmin/admin/user)
+function _getMyEmail(){
+  if(plantOwnerAuthenticated && currentPlantSession)
+    return ((currentPlantSession.owners||[])[0]||'').toLowerCase();
+  if(currentSession) return currentSession.email.toLowerCase();
+  // Superadmin
+  return (localStorage.getItem('admin_notify_email')||'').trim().toLowerCase();
 }
 
 // ── Helper: filter an arbitrary task array by the active dashboard Plant tab ──
@@ -6064,15 +6083,33 @@ function _renderMvDashboard(c, memberTasks, myTasks) {
     </div>
   </div>
 
-  <!-- ── Stats grid (identical to main) ── -->
+  <!-- ── Stats grid — 8 cards matching main dashboard ── -->
   <div class="stats-grid fade-in">
-    <div class="stat-card" style="--c:var(--accent)"><div class="stat-icon">📋</div><div class="stat-value">${total}</div><div class="stat-label">Total Tasks</div></div>
-    <div class="stat-card" style="--c:var(--text3)"><div class="stat-icon">📝</div><div class="stat-value">${todo}</div><div class="stat-label">To Do</div></div>
-    <div class="stat-card" style="--c:var(--purple)"><div class="stat-icon">⚡</div><div class="stat-value">${inprog}</div><div class="stat-label">In Progress</div></div>
-    <div class="stat-card" style="--c:var(--amber)"><div class="stat-icon">👁</div><div class="stat-value">${review}</div><div class="stat-label">In Review</div></div>
-    <div class="stat-card" style="--c:var(--green)"><div class="stat-icon">✅</div><div class="stat-value">${done}</div><div class="stat-label">Completed</div></div>
-    <div class="stat-card" style="--c:var(--red)"><div class="stat-icon">🚨</div><div class="stat-value">${overdue}</div><div class="stat-label">Overdue</div></div>
-    <div class="stat-card" style="--c:var(--cyan)" style="grid-column:span 2"><div class="stat-icon">📈</div><div class="stat-value">${rate}%</div><div class="stat-label">Completion Rate</div></div>
+    <div class="stat-card" style="--c:var(--accent);cursor:pointer;" onclick="switchMemberTab('mv-alltasks')" title="View all tasks">
+      <div class="stat-icon">📋</div><div class="stat-value">${total}</div><div class="stat-label">Total Tasks</div>
+    </div>
+    <div class="stat-card" style="--c:var(--purple);cursor:pointer;" onclick="switchMemberTab('mv-mytasks')" title="View My Tasks">
+      <div class="stat-icon">👤</div><div class="stat-value">${total}</div><div class="stat-label">My Tasks</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${overdue?'⚠ '+overdue+' overdue · ':''} ${(total-done)} open</div>
+    </div>
+    <div class="stat-card" style="--c:var(--text3);cursor:pointer;" onclick="switchMemberTab('mv-mytasks')" title="View To Do tasks">
+      <div class="stat-icon">📝</div><div class="stat-value">${todo}</div><div class="stat-label">To Do</div>
+    </div>
+    <div class="stat-card" style="--c:var(--purple);cursor:pointer;" onclick="switchMemberTab('mv-kanban')" title="View In Progress">
+      <div class="stat-icon">⚡</div><div class="stat-value">${inprog}</div><div class="stat-label">In Progress</div>
+    </div>
+    <div class="stat-card" style="--c:var(--amber);cursor:pointer;" onclick="switchMemberTab('mv-kanban')" title="View In Review">
+      <div class="stat-icon">👁</div><div class="stat-value">${review}</div><div class="stat-label">In Review</div>
+    </div>
+    <div class="stat-card" style="--c:var(--green);cursor:pointer;" onclick="switchMemberTab('mv-mytasks')" title="View Completed">
+      <div class="stat-icon">✅</div><div class="stat-value">${done}</div><div class="stat-label">Completed</div>
+    </div>
+    <div class="stat-card" style="--c:var(--red);cursor:pointer;" onclick="switchMemberTab('mv-mytasks')" title="View Overdue">
+      <div class="stat-icon">🚨</div><div class="stat-value">${overdue}</div><div class="stat-label">Overdue</div>
+    </div>
+    <div class="stat-card" style="--c:var(--cyan);cursor:pointer;" onclick="switchMemberTab('mv-dashboard')" title="Completion Rate">
+      <div class="stat-icon">📈</div><div class="stat-value">${rate}%</div><div class="stat-label">Completion Rate</div>
+    </div>
   </div>
 
   <!-- ── Upcoming due bar ── -->
@@ -8628,27 +8665,40 @@ function renderMyTasks(){
     return;
   }
 
-  // Use currentSession email for role-based logins; fall back to legacy modes
-  const selfEmail = currentSession ? currentSession.email
-    : mode==='user' ? (userEmail||'')
-    : (localStorage.getItem('self_email')||'');
-  const selfName = currentSession ? (currentSession.nickname || currentSession.email)
-    : mode==='user' ? (userEmail||'Me')
-    : (localStorage.getItem('self_name')||'Admin');
+  // Resolve identity across all roles including superadmin
+  let selfEmail = '';
+  let selfName  = '';
+  if(currentSession){
+    selfEmail = currentSession.email;
+    selfName  = currentSession.nickname || currentSession.email;
+  } else if(mode==='user'){
+    selfEmail = userEmail||'';
+    selfName  = userEmail||'Me';
+  } else {
+    // Superadmin: use admin_notify_email (set in Settings → Email Integration)
+    selfEmail = (localStorage.getItem('admin_notify_email')||'').trim();
+    selfName  = localStorage.getItem('self_name')||'Super Admin';
+    // Fallback to legacy self_email if admin_notify_email not set
+    if(!selfEmail) selfEmail = localStorage.getItem('self_email')||'';
+  }
 
-  // If no identity (legacy superadmin without session) show identity form
+  // If still no identity for superadmin — prompt them to set admin email in Settings
   if(!selfEmail && !currentSession && mode==='admin'){
     c.innerHTML=`
     <div style="font-family:var(--font-head);font-size:22px;font-weight:700;color:var(--text);margin-bottom:4px;">My Tasks</div>
-    <div style="max-width:480px;background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:24px;">
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">🔑 Set your identity</div>
-      <div class="form-row" style="margin-bottom:14px;">
-        <div class="form-group"><label class="form-label">Your Name</label>
-          <input id="self-name-inp" class="form-input" placeholder="e.g. Kapil Gupta"/></div>
-        <div class="form-group"><label class="form-label">Your Email</label>
-          <input id="self-email-inp" class="form-input" type="email" placeholder="e.g. kapil@polyplastics.com"/></div>
+    <div style="max-width:520px;background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:24px;">
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">🔑 Set your email to see your tasks</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6;">
+        Go to <strong>Settings → Email Integration → Admin Notify Email</strong> and enter your email address, then save.<br/>
+        This is used to identify which tasks are assigned to you.
       </div>
-      <button class="btn btn-primary" onclick="saveSelfIdentity()">Save Identity & View My Tasks</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="showPanel('settings')">⚙ Go to Settings</button>
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px;">
+          <input id="self-email-inp" class="form-input" type="email" placeholder="Or enter your email here…" style="flex:1;"/>
+          <button class="btn btn-ghost" onclick="(()=>{ const e=document.getElementById('self-email-inp')?.value?.trim(); if(e){ localStorage.setItem('admin_notify_email',e); renderMyTasks(); } })()">Go</button>
+        </div>
+      </div>
     </div>`;
     return;
   }
