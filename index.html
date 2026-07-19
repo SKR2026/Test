@@ -3685,19 +3685,74 @@ function renderSettings(){
 
       <!-- EmailJS pane -->
       <div id="email-pane-ejs" style="display:none">
-        <div style="background:rgba(52,211,153,.05);border:1px dashed rgba(52,211,153,.25);border-radius:var(--radius);padding:14px;margin-bottom:16px;font-size:12px;line-height:2;color:var(--text2)">
-          <div style="font-weight:700;color:var(--green);margin-bottom:6px">📬 EmailJS — works with Gmail, Outlook, any SMTP (free: 200 emails/month)</div>
-          <div><span style="background:var(--green);color:#000;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:6px">1</span>Sign up free at <a href="https://www.emailjs.com" style="color:var(--green)" target="_blank">emailjs.com</a> → Dashboard → Add New Service (Gmail / Outlook / SMTP)</div>
-          <div><span style="background:var(--green);color:#000;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:6px">2</span>Create a Template with <code style="background:var(--card);padding:1px 6px;border-radius:3px">{{to_email}}</code>, <code style="background:var(--card);padding:1px 6px;border-radius:3px">{{subject}}</code>, <code style="background:var(--card);padding:1px 6px;border-radius:3px">{{message_html}}</code></div>
-          <div><span style="background:var(--green);color:#000;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:6px">3</span>Copy Service ID, Template ID, and Public Key → paste below → Save → Test ✅</div>
+
+        <!-- ── Gmail / Any email quick-setup guide ── -->
+        <div style="background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:10px;padding:16px 18px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:800;color:var(--green);margin-bottom:12px;">📬 Send from Gmail, Rediffmail, Outlook or any email — Free Setup (5 min)</div>
+
+          <!-- Step 1 -->
+          <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;">
+            <div style="min-width:24px;height:24px;border-radius:50%;background:var(--green);color:#000;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">1</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7;">
+              Go to <a href="https://www.emailjs.com" target="_blank" style="color:var(--green);font-weight:700;">emailjs.com</a> → <strong>Sign up free</strong> (use your Gmail / Rediffmail / any email)
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;">
+            <div style="min-width:24px;height:24px;border-radius:50%;background:var(--green);color:#000;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">2</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7;">
+              Dashboard → <strong>Email Services</strong> → <strong>Add New Service</strong><br/>
+              Choose <strong>Gmail</strong> (or Outlook / SMTP for Rediffmail etc.) → click <strong>Connect Account</strong> → sign in → <strong>Create Service</strong><br/>
+              <span style="color:var(--text3);">Copy the <strong style="color:var(--text);">Service ID</strong> (looks like <code style="background:var(--card2);padding:1px 6px;border-radius:3px;font-size:11px;">service_abc123</code>)</span>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;">
+            <div style="min-width:24px;height:24px;border-radius:50%;background:var(--green);color:#000;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">3</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7;">
+              Dashboard → <strong>Email Templates</strong> → <strong>Create New Template</strong><br/>
+              Set <strong>To</strong> field: <code style="background:var(--card2);padding:1px 6px;border-radius:3px;font-size:11px;">{{to_email}}</code> &nbsp;|&nbsp; <strong>Subject</strong>: <code style="background:var(--card2);padding:1px 6px;border-radius:3px;font-size:11px;">{{subject}}</code><br/>
+              In the <strong>Body</strong>, paste: <code style="background:var(--card2);padding:2px 8px;border-radius:3px;font-size:11px;">{{{message_html}}}</code> <em style="color:var(--text3)">(triple braces for HTML)</em><br/>
+              <span style="color:var(--text3);">Copy the <strong style="color:var(--text);">Template ID</strong> (looks like <code style="background:var(--card2);padding:1px 6px;border-radius:3px;font-size:11px;">template_xyz789</code>)</span>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div style="display:flex;gap:10px;margin-bottom:6px;align-items:flex-start;">
+            <div style="min-width:24px;height:24px;border-radius:50%;background:var(--green);color:#000;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">4</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7;">
+              Dashboard → top-right → <strong>Account</strong> → <strong>General</strong> → copy <strong>Public Key</strong><br/>
+              Paste all three values below → <strong>Save Settings</strong> → <strong>Send Test Email</strong> ✅<br/>
+              <span style="color:var(--text3);">Free plan: 200 emails/month · No credit card needed</span>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;padding:8px 12px;background:rgba(255,176,32,.08);border:1px solid rgba(255,176,32,.2);border-radius:7px;font-size:11px;color:var(--amber);">
+            💡 <strong>Rediffmail / custom SMTP:</strong> In Step 2, choose <strong>"Other (Custom SMTP)"</strong> and enter your mail server host, port (587 for TLS), and login credentials.
+          </div>
         </div>
+
+        <!-- Credentials inputs -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
-          <div class="form-group"><label class="form-label">Service ID</label>
-            <input class="form-input" id="ejs-service-id" placeholder="service_xxxxxxx" value="${localStorage.getItem('ejs_service_id')||''}" /></div>
-          <div class="form-group"><label class="form-label">Template ID</label>
-            <input class="form-input" id="ejs-template-id" placeholder="template_xxxxxxx" value="${localStorage.getItem('ejs_template_id')||''}" /></div>
-          <div class="form-group"><label class="form-label">Public Key</label>
-            <input class="form-input" id="ejs-public-key" placeholder="xxxxxxxxxxxxxxxxxxxx" value="${localStorage.getItem('ejs_public_key')||''}" /></div>
+          <div class="form-group">
+            <label class="form-label">Service ID</label>
+            <input class="form-input" id="ejs-service-id" placeholder="service_xxxxxxx" value="${localStorage.getItem('ejs_service_id')||''}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Template ID</label>
+            <input class="form-input" id="ejs-template-id" placeholder="template_xxxxxxx" value="${localStorage.getItem('ejs_template_id')||''}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Public Key</label>
+            <input class="form-input" id="ejs-public-key" placeholder="xxxxxxxxxxxxxxxxxxxx" value="${localStorage.getItem('ejs_public_key')||''}" />
+          </div>
+        </div>
+
+        <!-- Status badge -->
+        <div id="ejs-status-badge" style="font-size:12px;margin-top:2px;margin-bottom:4px;min-height:18px;color:var(--text3);">
+          ${(()=>{const s=localStorage.getItem('ejs_service_id'),t=localStorage.getItem('ejs_template_id'),k=localStorage.getItem('ejs_public_key');return s&&t&&k?'<span style="color:var(--green);font-weight:700;">✅ EmailJS configured — ready to send</span>':'<span style="color:var(--amber);">⚠ Enter all three values and Save to enable EmailJS</span>';})()}
         </div>
       </div>
 
@@ -4110,7 +4165,9 @@ function saveEmailSettings(){
     const signinBtn = document.getElementById('msal-signin-btn');
     if(signinBtn && !alreadyIn){ signinBtn.style.boxShadow = '0 0 0 2px var(--green)'; }
   } else if(ejsService && ejsTemplate && ejsKey){
-    toast('✅ EmailJS settings saved.');
+    toast('✅ EmailJS ready — emails will send from your connected Gmail/Rediffmail account.');
+    const badge = document.getElementById('ejs-status-badge');
+    if(badge) badge.innerHTML = '<span style="color:var(--green);font-weight:700;">✅ EmailJS configured — ready to send</span>';
   } else {
     toast('⚠ Settings saved — no email transport configured yet.', 'var(--amber)');
   }
