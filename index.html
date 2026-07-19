@@ -5710,31 +5710,31 @@ function _updateSidebarAccountInfo() {
   if(!panel) return;
   if(_memberViewActive && _memberViewEmail) {
     const nick = _memberViewNick || _memberViewEmail.split('@')[0];
-    panel.innerHTML = \`
+    panel.innerHTML = `
       <div style="font-size:10px;color:var(--amber);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">👁 Viewing Member</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <div style="width:32px;height:32px;border-radius:50%;background:rgba(179,102,255,.2);border:2px solid var(--purple);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:var(--purple);flex-shrink:0;">\${nick[0].toUpperCase()}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(179,102,255,.2);border:2px solid var(--purple);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:var(--purple);flex-shrink:0;">${nick[0].toUpperCase()}</div>
         <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);">\${esc(nick)}</div>
-          <div style="font-size:10px;color:var(--text3);word-break:break-all;">\${esc(_memberViewEmail)}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);">${esc(nick)}</div>
+          <div style="font-size:10px;color:var(--text3);word-break:break-all;">${esc(_memberViewEmail)}</div>
         </div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="exitMemberImpersonation()" style="width:100%;justify-content:center;font-size:11px;color:var(--amber);border-color:rgba(251,191,36,.3);">↩ Back to My Account</button>\`;
+      <button class="btn btn-ghost btn-sm" onclick="exitMemberImpersonation()" style="width:100%;justify-content:center;font-size:11px;color:var(--amber);border-color:rgba(251,191,36,.3);">↩ Back to My Account</button>`;
   } else {
     const nick = getSessionNick();
     const email = getSessionEmail();
     const role = currentSession ? currentSession.role : 'Super Admin';
     const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
     const initial = nick ? nick[0].toUpperCase() : (email ? email[0].toUpperCase() : 'A');
-    panel.innerHTML = \`
+    panel.innerHTML = `
       <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">My Account</div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;flex-shrink:0;">\${initial}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;flex-shrink:0;">${initial}</div>
         <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);">\${esc(nick||'Admin')} <span style="font-size:10px;font-weight:600;color:var(--accent);">(\${roleLabel})</span></div>
-          <div style="font-size:10px;color:var(--text3);word-break:break-all;">\${esc(email||'')}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);">${esc(nick||'Admin')} <span style="font-size:10px;font-weight:600;color:var(--accent);">(${roleLabel})</span></div>
+          <div style="font-size:10px;color:var(--text3);word-break:break-all;">${esc(email||'')}</div>
         </div>
-      </div>\`;
+      </div>`;
   }
 }
 
