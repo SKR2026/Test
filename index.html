@@ -787,7 +787,7 @@
     </div>
 
     <!-- ── Global Member Bar — visible on all tabs ── -->
-    <div id="global-member-bar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:7px 28px;display:none;align-items:center;gap:10px;flex-wrap:wrap;min-height:40px;">
+    <div id="global-member-bar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:8px 28px;align-items:center;gap:10px;flex-wrap:wrap;min-height:44px;">
       <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.9px;white-space:nowrap;">Members</span>
       <div id="global-member-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;"></div>
     </div>
@@ -1844,6 +1844,19 @@ function showPanel(name){
     document.getElementById('topbar-title').textContent=titles[name]||name;
   }
   refreshOverdueBadge();
+  // Keep global member bar visible and updated on every tab switch
+  if(adminAuthenticated && name !== 'user'){
+    const bar = document.getElementById('global-member-bar');
+    if(bar && bar.style.display !== 'flex') buildGlobalMemberBar();
+    // Ensure self chip is highlighted when not in member viewer
+    if(!document.getElementById('member-viewer') || document.getElementById('member-viewer').style.display === 'none'){
+      const myEmail = _getMyEmail();
+      document.querySelectorAll('.member-chip').forEach(c => {
+        const isActive = myEmail && c.dataset.email === myEmail;
+        c.classList.toggle('active', isActive || c.classList.contains('self'));
+      });
+    }
+  }
 }
 
 // ── Firebase dashboard status widget updater ──────────────────────────
@@ -6519,6 +6532,12 @@ function buildGlobalMemberBar() {
   });
 
   bar.style.display = 'flex';
+  // Apply active state on self chip
+  const myE = _getMyEmail();
+  chips.querySelectorAll('.member-chip').forEach(c => {
+    const isSelf = myE && c.dataset.email === myE;
+    c.classList.toggle('active', isSelf);
+  });
 }
 
 async function _loadGroupMemberEmails(adminEmail) {
@@ -8610,6 +8629,32 @@ function checkUrlToken(){
 let myTasksFilter='all'; // currently active status pill in the My Tasks panel
 let myTasksAssignedBySearch=''; // current "assigned by" search text in the My Tasks panel
 
+
+function _myTasksStatCards(myT, todo, inprog, review, done, overdue) {
+  const rate = myT.length ? Math.round(done.length/myT.length*100) : 0;
+  const cards = [
+    {label:'Total Tasks',      val:myT.length,    col:'var(--accent)',  icon:'📋', filter:'all'},
+    {label:'My Tasks',         val:myT.length,    col:'var(--purple)',  icon:'👤', filter:'all',
+     sub: (overdue.length ? '⚠ '+overdue.length+' overdue · ' : '') + (myT.length-done.length)+' open'},
+    {label:'To Do',            val:todo.length,   col:'var(--text3)',   icon:'📌', filter:'To Do'},
+    {label:'In Progress',      val:inprog.length, col:'var(--cyan)',    icon:'⚡', filter:'In Progress'},
+    {label:'In Review',        val:review.length, col:'var(--amber)',   icon:'👁', filter:'Review'},
+    {label:'Completed',        val:done.length,   col:'var(--green)',   icon:'✅', filter:'Done'},
+    {label:'Overdue',          val:overdue.length,col:'var(--red)',     icon:'🚨', filter:'overdue'},
+    {label:'Completion Rate',  val:rate+'%',      col:'var(--cyan)',    icon:'📈', filter:'all'},
+  ];
+  return `<div class="stats-grid fade-in" style="margin-bottom:22px;">` +
+    cards.map(card => `
+    <div class="stat-card" style="--c:${card.col};cursor:pointer;" onclick="filterMyTasks('${card.filter}')"
+         title="Filter: ${card.label}">
+      <div class="stat-icon">${card.icon}</div>
+      <div class="stat-value">${card.val}</div>
+      <div class="stat-label">${card.label}</div>
+      ${card.sub ? `<div style="font-size:10px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${card.sub}</div>` : ''}
+    </div>`).join('') +
+  `</div>`;
+}
+
 function renderMyTasks(){
   const c=document.getElementById('content');
   // reset this panel's search state on every fresh render
@@ -8642,15 +8687,7 @@ function renderMyTasks(){
         <div class="dash-tab-row" id="mytasks-month-row"><span class="dash-tab-label">Month</span></div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin-bottom:22px;">
-      ${[['Total','all',myT.length,'var(--accent)','📋'],['To Do','To Do',todo.length,'var(--text3)','📌'],['In Progress','In Progress',inprog.length,'var(--cyan)','⚡'],['Review','Review',review.length,'var(--purple)','👁'],['Done','Done',done.length,'var(--green)','✅'],['Overdue','overdue',overdue.length,'var(--red)','🚨']].map(([l,f,v,col,icon])=>`
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;cursor:pointer;transition:all .15s;" onclick="filterMyTasks('${f}')"
-           onmouseover="this.style.borderColor='${col}';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
-        <div style="font-size:18px;margin-bottom:4px;">${icon}</div>
-        <div style="font-size:22px;font-weight:800;color:${col}">${v}</div>
-        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px;">${l}</div>
-      </div>`).join('')}
-    </div>
+    ${_myTasksStatCards(myT, todo, inprog, review, done, overdue)}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:12px;color:var(--text3);">Showing:</span>
@@ -8734,15 +8771,7 @@ function renderMyTasks(){
     <button class="btn btn-ghost btn-sm" onclick="localStorage.removeItem('self_email');localStorage.removeItem('self_name');renderMyTasks()">Change Identity</button>
   </div>`:''}
 
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin-bottom:22px;">
-    ${[['Total','all',myT.length,'var(--accent)','📋'],['To Do','To Do',todo.length,'var(--text3)','📌'],['In Progress','In Progress',inprog.length,'var(--cyan)','⚡'],['Review','Review',review.length,'var(--purple)','👁'],['Done','Done',done.length,'var(--green)','✅'],['Overdue','overdue',overdue.length,'var(--red)','🚨']].map(([l,f,v,col,icon])=>`
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;cursor:pointer;transition:all .15s;" onclick="filterMyTasks('${f}')"
-         onmouseover="this.style.borderColor='${col}';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
-      <div style="font-size:18px;margin-bottom:4px;">${icon}</div>
-      <div style="font-size:22px;font-weight:800;color:${col}">${v}</div>
-      <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px;">${l}</div>
-    </div>`).join('')}
-  </div>
+  ${_myTasksStatCards(myT, todo, inprog, review, done, overdue)}
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
     <div style="display:flex;align-items:center;gap:8px;">
