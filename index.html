@@ -764,7 +764,10 @@
           <span id="notif-badge" style="position:absolute;top:-6px;right:-6px;background:#f87171;color:#fff;border-radius:50%;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px;font-size:11px;font-weight:800;display:none;box-shadow:0 0 0 2px var(--surface);pointer-events:none;"></span>
           <div id="notif-panel" style="display:none;position:absolute;right:0;top:44px;width:340px;max-height:400px;overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);z-index:300;box-shadow:0 8px 32px rgba(0,0,0,.4);">
             <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-weight:700;font-size:14px;">Reply Notifications</span>
+              <div>
+                <span style="font-weight:700;font-size:14px;">🔔 Notifications</span>
+                <div style="font-size:10px;color:var(--text3);margin-top:1px;" id="notif-panel-sub">Task assignments &amp; updates</div>
+              </div>
               <button class="btn btn-ghost btn-sm" onclick="clearNotifications()" style="font-size:11px;padding:4px 8px;">Clear all</button>
             </div>
             <div id="notif-list"></div>
@@ -1482,6 +1485,11 @@ function startFirestoreListeners() {
     if(sdot){sdot.style.background='var(--green)';sdot.style.boxShadow='0 0 8px var(--green)';}
     if(slbl){slbl.style.color='var(--green)';slbl.textContent='Connected to Firebase ✓ — '+snap.docs.length+' task(s) synced';}
     updateDashFbStatus('connected', snap.docs.length);
+    // Start notif listener for current session if not already running
+    if(!_notifUserEmail){
+      const _nEmail = (currentSession?.email || '').toLowerCase();
+      if(_nEmail) _startNotifListener(_nEmail);
+    }
     if (snap.empty && tasks.length === 0) {
       // First run — seed Firestore with demo data
       const batch = _db.batch();
@@ -1528,22 +1536,107 @@ function startFirestoreListeners() {
         }
       } catch(e) { console.warn('assignee link recovery:', e.message); }
 
-      // Detect new replies from users (for admin bell notification)
-      if(mode === 'admin' && prevTasks.length > 0){
+      // ── Per-user notification detection (runs for every logged-in role) ──
+      if(prevTasks.length > 0){
+        const myEmail = (currentSession?.email || '').toLowerCase();
+        const isAdminMode = mode === 'admin' && !currentSession; // true superadmin
+
         tasks.forEach(newT => {
           const oldT = prevTasks.find(p => p.id === newT.id);
-          const newReplies = (newT.replies || []);
-          const oldReplies = (oldT ? (oldT.replies || []) : []);
-          if(newReplies.length > oldReplies.length){
-            newReplies.slice(oldReplies.length).forEach(r => {
-              if(r.author !== 'Admin'){
-                addNotification(newT.id, newT.title, r.author, r.text || '(attachment)');
-                const cfg = getEmailConfig();
-                if(adminAuthenticated && cfg.clientId && cfg.tenantId){
-                  sendReplyNotificationEmail(newT, r);
-                }
-              }
+          const assignee = (newT.assignee || '').toLowerCase();
+          const assignedBy = (newT.assignedBy || '').toLowerCase();
+
+          // ── 1. New task assigned TO current user ──
+          if(!oldT && assignee && myEmail && assignee === myEmail){
+            const byNick = _nickCache[assignedBy] || assignedBy.split('@')[0] || 'Someone';
+            pushUserNotification({
+              type: 'assigned',
+              taskId: newT.id,
+              taskTitle: newT.title,
+              author: byNick,
+              text: `New task assigned to you by ${byNick}`,
+              targetEmail: myEmail
             });
+          }
+
+          // ── 2. Existing task updated — notify assignee ──
+          if(oldT && assignee && myEmail && assignee === myEmail){
+            // Status change
+            if(oldT.status !== newT.status){
+              pushUserNotification({
+                type: 'status',
+                taskId: newT.id,
+                taskTitle: newT.title,
+                author: _nickCache[assignedBy] || assignedBy.split('@')[0] || 'Admin',
+                text: `Status changed: ${oldT.status} → ${newT.status}`,
+                targetEmail: myEmail
+              });
+            }
+            // Due date change
+            if(oldT.due !== newT.due && newT.due){
+              pushUserNotification({
+                type: 'due',
+                taskId: newT.id,
+                taskTitle: newT.title,
+                author: _nickCache[assignedBy] || assignedBy.split('@')[0] || 'Admin',
+                text: `Due date updated to ${newT.due}`,
+                targetEmail: myEmail
+              });
+            }
+            // New replies to the assignee
+            const newReplies = (newT.replies || []);
+            const oldReplies = (oldT.replies || []);
+            if(newReplies.length > oldReplies.length){
+              newReplies.slice(oldReplies.length).forEach(r => {
+                // Notify the assignee when admin/someone else replies
+                if((r.author||'').toLowerCase() !== myEmail){
+                  pushUserNotification({
+                    type: 'reply',
+                    taskId: newT.id,
+                    taskTitle: newT.title,
+                    author: r.author || 'Admin',
+                    text: r.text || '(attachment)',
+                    targetEmail: myEmail
+                  });
+                }
+                // Also notify admin/assigner when user replies (old behaviour)
+                if(isAdminMode || (myEmail && assignedBy === myEmail)){
+                  if((r.author||'').toLowerCase() !== (isAdminMode ? 'admin' : myEmail)){
+                    addNotification(newT.id, newT.title, r.author, r.text || '(attachment)');
+                    const cfg = getEmailConfig();
+                    if(adminAuthenticated && cfg.clientId && cfg.tenantId){
+                      sendReplyNotificationEmail(newT, r);
+                    }
+                  }
+                }
+              });
+            }
+          }
+
+          // ── 3. Admin/assigner: notify when user replies to your task ──
+          if(oldT && !currentSession && isAdminMode){
+            const newReplies = (newT.replies || []);
+            const oldReplies = (oldT.replies || []);
+            if(newReplies.length > oldReplies.length){
+              newReplies.slice(oldReplies.length).forEach(r => {
+                if(r.author !== 'Admin'){
+                  addNotification(newT.id, newT.title, r.author, r.text || '(attachment)');
+                }
+              });
+            }
+          }
+
+          // ── 4. Task assigner (currentSession admin): notify when their assigned task gets a reply ──
+          if(oldT && currentSession && assignedBy === myEmail){
+            const newReplies = (newT.replies || []);
+            const oldReplies = (oldT.replies || []);
+            if(newReplies.length > oldReplies.length){
+              newReplies.slice(oldReplies.length).forEach(r => {
+                if((r.author||'').toLowerCase() !== myEmail){
+                  addNotification(newT.id, newT.title, r.author || assignee, r.text || '(attachment)');
+                }
+              });
+            }
           }
         });
       }
@@ -2268,6 +2361,7 @@ function renderDashboard(){
   </div>
   <style>
     @keyframes fbPulse { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.2);opacity:0} }
+  @keyframes notifPop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
   </style>
 
   <div class="stats-grid fade-in" id="dash-stats-grid">
@@ -5858,6 +5952,10 @@ function _activateRoleSession(role) {
   const sai = document.getElementById('sidebar-account-info');
   if(sai) sai.style.display = 'block';
   _updateSidebarAccountInfo();
+  // Start per-user Firestore notification listener
+  if(currentSession && currentSession.email){
+    _startNotifListener(currentSession.email.toLowerCase());
+  }
 }
 
 function _injectRoleNavItems(role) {
@@ -6714,6 +6812,7 @@ async function adminLogin(){
 
 // ── Logout ────────────────────────────────────────────────────────────
 function handleLogout(){
+  _stopNotifListener();
   // Clear role session on any logout
   currentSession = null;
   const roleBadge = document.getElementById('role-user-badge');
@@ -7687,7 +7786,22 @@ function saveTask(){
       closeTaskModal(); refreshOverdueBadge(); showPanel(currentPanel);
       // notify assignee of what changed
       const changes=[];
-      if(assignee!==t.assignee)    changes.push({reason:'assigned',      detail:'Reassigned to '+assignee});
+      if(assignee!==t.assignee){
+        changes.push({reason:'assigned', detail:'Reassigned to '+assignee});
+        // Push bell notif to new assignee
+        if(assignee && assignee.toLowerCase() !== getSessionEmail().toLowerCase()){
+          const reassignerNick = getSessionNick() || getSessionEmail() || 'Admin';
+          pushUserNotification({
+            type: 'assigned',
+            taskId: t.id,
+            taskTitle: t.title,
+            author: reassignerNick,
+            text: `${reassignerNick} assigned you this task`,
+            targetEmail: assignee.toLowerCase()
+          });
+        }
+      }
+
       if(due!==t.due)              changes.push({reason:'date_change',   detail:'Due date → '+fmt(due)});
       if(newPriority!==t.priority) changes.push({reason:'priority_change',detail:'Priority → '+newPriority});
       if(newStatus!==t.status){
@@ -7731,6 +7845,19 @@ function saveTask(){
       // Strip undefined fields before sending to Firestore (Firestore rejects undefined)
       const ntClean = Object.fromEntries(Object.entries(nt).filter(([,v])=>v!==undefined));
       if(_fbReady&&_db) _db.collection('tasks').doc(ntClean.id).set(ntClean).catch(e=>console.warn('addTask error',e));
+
+      // ── Push bell notification to assignee immediately ──
+      if(nt.assignee && nt.assignee.toLowerCase() !== getSessionEmail().toLowerCase()){
+        const assignerNick = getSessionNick() || getSessionEmail() || 'Admin';
+        pushUserNotification({
+          type: 'assigned',
+          taskId: nt.id,
+          taskTitle: nt.title,
+          author: assignerNick,
+          text: `${assignerNick} assigned you this task${nt.due ? ' · Due: '+nt.due : ''}${nt.priority ? ' · '+nt.priority+' priority' : ''}`,
+          targetEmail: nt.assignee.toLowerCase()
+        });
+      }
 
       // Close modal & refresh UI FIRST — emails run in background after render
       closeTaskModal(); refreshOverdueBadge(); showPanel(currentPanel);
@@ -8619,23 +8746,101 @@ function setColorTheme(color){
 })();
 
 // ── Notification system ───────────────────────────────────────────────
-let _notifications = JSON.parse(localStorage.getItem('tf_notifs') || '[]');
+// ═══════════════════════════════════════════════════════════════════════
+//  PER-USER NOTIFICATION SYSTEM
+//  Each user's notifications stored in Firestore: notifications/{email}/items/{id}
+//  Falls back to localStorage when Firestore not ready.
+// ═══════════════════════════════════════════════════════════════════════
+let _notifications = [];
+let _notifUserEmail = null;      // email of user whose notifs are loaded
+let _notifUnsubscribe = null;    // Firestore listener unsubscribe
 
-function saveNotifs(){ localStorage.setItem('tf_notifs', JSON.stringify(_notifications)); }
+// Notification type icons
+const NOTIF_ICONS = { assigned:'📋', status:'🔄', due:'📅', reply:'💬', info:'ℹ️' };
 
-function addNotification(taskId, taskTitle, replyAuthor, replyText){
+// ── Load notifs from Firestore for the current user ──────────────────
+function _startNotifListener(email) {
+  if(!email || !_fbReady || !_db) return;
+  if(_notifUserEmail === email) return; // already listening
+  _notifUserEmail = email;
+  if(_notifUnsubscribe) _notifUnsubscribe();
+
+  const docKey = email.replace(/[@.]/g,'_');
+  _notifUnsubscribe = _db.collection('notifications').doc(docKey)
+    .onSnapshot(snap => {
+      if(snap.exists){
+        const data = snap.data();
+        _notifications = (data.items || []).sort((a,b)=>b.time.localeCompare(a.time)).slice(0,60);
+      } else {
+        _notifications = [];
+      }
+      refreshNotifBadge();
+      // Re-render panel if open
+      const panel = document.getElementById('notif-panel');
+      if(panel && panel.style.display === 'block') renderNotifList();
+    }, err => {
+      console.warn('[Notif] Firestore listener error:', err.message);
+    });
+}
+
+// ── Stop listening (on logout) ────────────────────────────────────────
+function _stopNotifListener() {
+  if(_notifUnsubscribe) { _notifUnsubscribe(); _notifUnsubscribe = null; }
+  _notifUserEmail = null;
+  _notifications = [];
+  refreshNotifBadge();
+}
+
+// ── Push a notification to a user's Firestore notif doc ──────────────
+async function pushUserNotification({ type, taskId, taskTitle, author, text, targetEmail }) {
+  if(!targetEmail || !_fbReady || !_db) return;
   const n = {
     id: uid(),
+    type: type || 'info',
     taskId,
     taskTitle,
-    replyAuthor,
-    replyText: replyText.slice(0,80)+(replyText.length>80?'…':''),
+    author,
+    text: (text||'').slice(0,120),
     time: new Date().toISOString(),
     read: false
   };
+  const docKey = targetEmail.replace(/[@.]/g,'_');
+  try {
+    await _db.collection('notifications').doc(docKey).set({
+      items: firebase.firestore.FieldValue.arrayUnion(n),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    // Prune to 60 items periodically
+    const snap = await _db.collection('notifications').doc(docKey).get();
+    if(snap.exists){
+      const items = (snap.data().items || []);
+      if(items.length > 60){
+        const pruned = items.sort((a,b)=>b.time.localeCompare(a.time)).slice(0,60);
+        await _db.collection('notifications').doc(docKey).set({ items: pruned }, { merge: true });
+      }
+    }
+  } catch(e) {
+    console.warn('[Notif] pushUserNotification failed:', e.message);
+  }
+}
+
+// ── Legacy addNotification (localStorage — for superadmin reply notifs) ──
+function addNotification(taskId, taskTitle, replyAuthor, replyText){
+  const myEmail = getSessionEmail();
+  if(myEmail && _fbReady && _db){
+    // Route to Firestore for logged-in users
+    pushUserNotification({ type:'reply', taskId, taskTitle, author:replyAuthor, text:replyText, targetEmail:myEmail });
+    return;
+  }
+  // Fallback: localStorage for superadmin
+  const n = {
+    id: uid(), type:'reply', taskId, taskTitle,
+    author: replyAuthor,
+    text: (replyText||'').slice(0,80)+((replyText||'').length>80?'…':''),
+    time: new Date().toISOString(), read: false
+  };
   _notifications.unshift(n);
   if(_notifications.length > 50) _notifications = _notifications.slice(0,50);
-  saveNotifs();
   refreshNotifBadge();
 }
 
@@ -8646,6 +8851,8 @@ function refreshNotifBadge(){
   if(unread > 0){
     badge.textContent = unread > 9 ? '9+' : String(unread);
     badge.style.display = 'inline-block';
+    badge.style.animation = 'notifPop .3s ease';
+    setTimeout(()=>{ if(badge) badge.style.animation=''; }, 300);
   } else {
     badge.style.display = 'none';
   }
@@ -8657,11 +8864,24 @@ function toggleNotifPanel(){
   panel.style.display = open ? 'none' : 'block';
   if(!open){
     renderNotifList();
-    // mark all as read when panel opens
-    _notifications.forEach(n => n.read = true);
-    saveNotifs();
-    refreshNotifBadge();
+    // Mark all as read in Firestore
+    _markAllNotifsRead();
   }
+}
+
+async function _markAllNotifsRead(){
+  _notifications.forEach(n => n.read = true);
+  refreshNotifBadge();
+  const email = _notifUserEmail;
+  if(!email || !_fbReady || !_db) return;
+  try {
+    const docKey = email.replace(/[@.]/g,'_');
+    const snap = await _db.collection('notifications').doc(docKey).get();
+    if(snap.exists){
+      const items = (snap.data().items || []).map(n => ({...n, read:true}));
+      await _db.collection('notifications').doc(docKey).set({ items }, { merge: true });
+    }
+  } catch(e) { console.warn('[Notif] markAllRead error:', e.message); }
 }
 
 function renderNotifList(){
@@ -8671,25 +8891,41 @@ function renderNotifList(){
     list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px;">No notifications yet</div>';
     return;
   }
-  list.innerHTML = _notifications.map(n => `
+  list.innerHTML = _notifications.map(n => {
+    const icon = NOTIF_ICONS[n.type] || '🔔';
+    const unreadDot = !n.read ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0;margin-top:4px;"></span>' : '';
+    const timeStr = new Date(n.time).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return `
     <div onclick="openDrawer('${n.taskId}');document.getElementById('notif-panel').style.display='none';"
-      style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:background .15s;"
-      onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background=''"
+      style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;${!n.read?'background:rgba(91,141,238,.04);':''}"
+      onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background='${!n.read?'rgba(91,141,238,.04)':''}'"
     >
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="font-size:11px;font-weight:700;color:var(--accent);">${esc(n.replyAuthor)}</span>
-        <span style="font-size:10px;color:var(--text3);">${new Date(n.time).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        ${unreadDot}
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="font-size:14px;">${icon}</span>
+            <span style="font-size:12px;font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(n.taskTitle||'')}</span>
+            <span style="font-size:10px;color:var(--text3);white-space:nowrap;">${timeStr}</span>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--accent);margin-bottom:2px;">${esc(n.author||'')}</div>
+          <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(n.text||'')}</div>
+        </div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px;">${esc(n.taskTitle)}</div>
-      <div style="font-size:12px;color:var(--text2);">${esc(n.replyText)}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
-function clearNotifications(){
+async function clearNotifications(){
   _notifications = [];
-  saveNotifs();
   refreshNotifBadge();
   renderNotifList();
+  const email = _notifUserEmail;
+  if(!email || !_fbReady || !_db) return;
+  try {
+    const docKey = email.replace(/[@.]/g,'_');
+    await _db.collection('notifications').doc(docKey).set({ items:[], updatedAt: new Date().toISOString() });
+  } catch(e) { console.warn('[Notif] clearNotifications error:', e.message); }
 }
 
 // close notif panel on outside click
