@@ -786,6 +786,38 @@
       </div>
     </div>
 
+    <!-- ── Global Member Bar — visible on all tabs ── -->
+    <div id="global-member-bar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:7px 28px;display:none;align-items:center;gap:10px;flex-wrap:wrap;min-height:40px;">
+      <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.9px;white-space:nowrap;">Members</span>
+      <div id="global-member-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;"></div>
+    </div>
+
+    <!-- ── Member Viewer Panel — full member dashboard overlay ── -->
+    <div id="member-viewer" style="display:none;position:fixed;inset:0;z-index:500;background:var(--bg);overflow:hidden;flex-direction:column;">
+      <!-- Member viewer topbar -->
+      <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px;flex-shrink:0;">
+        <button onclick="closeMemberViewer()" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;">← Back</button>
+        <div style="display:flex;align-items:center;gap:10px;flex:1;">
+          <div id="mv-avatar" style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;flex-shrink:0;">?</div>
+          <div>
+            <div id="mv-name" style="font-weight:800;font-size:16px;color:var(--text);">Member</div>
+            <div id="mv-email" style="font-size:11px;color:var(--text3);">—</div>
+          </div>
+        </div>
+        <!-- Member sub-tabs -->
+        <div style="display:flex;gap:4px;flex-wrap:wrap;" id="mv-tabs">
+          <button class="mv-tab active" data-tab="mv-dashboard" onclick="switchMemberTab('mv-dashboard')">📊 Dashboard</button>
+          <button class="mv-tab" data-tab="mv-mytasks"   onclick="switchMemberTab('mv-mytasks')">✅ My Tasks</button>
+          <button class="mv-tab" data-tab="mv-alltasks"  onclick="switchMemberTab('mv-alltasks')">📋 All Tasks</button>
+          <button class="mv-tab" data-tab="mv-kanban"    onclick="switchMemberTab('mv-kanban')">🗂 Kanban</button>
+          <button class="mv-tab" data-tab="mv-gantt"     onclick="switchMemberTab('mv-gantt')">📅 Gantt</button>
+          <button class="mv-tab" data-tab="mv-team"      onclick="switchMemberTab('mv-team')">👥 Team</button>
+        </div>
+      </div>
+      <!-- Member viewer content -->
+      <div id="mv-content" style="flex:1;overflow-y:auto;padding:24px;"></div>
+    </div>
+
     <!-- content area -->
     <div id="content">
       <!-- panels injected here -->
@@ -2362,6 +2394,29 @@ function renderDashboard(){
   <style>
     @keyframes fbPulse { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.2);opacity:0} }
   @keyframes notifPop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
+
+  /* ── Global Member Chips ── */
+  .member-chip {
+    display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;
+    font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--border2);
+    background:var(--card);color:var(--text2);transition:all .15s;white-space:nowrap;
+  }
+  .member-chip:hover { border-color:var(--accent);color:var(--accent);background:rgba(91,141,238,.08); }
+  .member-chip.self  { border-color:var(--purple);color:var(--purple);background:rgba(179,102,255,.1); }
+  .member-chip.active{ border-color:var(--accent);color:#fff;background:var(--accent);box-shadow:0 0 12px rgba(91,141,238,.4); }
+
+  /* ── Member Viewer Sub-tabs ── */
+  .mv-tab {
+    padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
+    border:1.5px solid var(--border2);background:var(--card);color:var(--text2);
+    font-family:var(--font-body);transition:all .15s;white-space:nowrap;
+  }
+  .mv-tab:hover  { border-color:var(--accent);color:var(--accent); }
+  .mv-tab.active { background:var(--accent);border-color:var(--accent);color:#fff; }
+
+  /* ── Member viewer slide-in ── */
+  #member-viewer { animation: mvSlideIn .2s ease; }
+  @keyframes mvSlideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
   </style>
 
   <div class="stats-grid fade-in" id="dash-stats-grid">
@@ -5830,35 +5885,341 @@ let _memberViewEmail    = null;    // email of member being viewed
 let _memberViewNick     = null;    // nickname of member being viewed
 let _memberViewOrigTasks = null;   // backup of original _tasks scope
 
-// Enter impersonation: show only tasks assigned to the selected member
-function enterMemberImpersonation(email, nick) {
+// ═══════════════════════════════════════════════════════════════════════
+//  MEMBER VIEWER — full per-member dashboard in an overlay
+// ═══════════════════════════════════════════════════════════════════════
+let _mvEmail  = null;  // email of member currently being viewed
+let _mvNick   = null;  // nickname
+let _mvTab    = 'mv-dashboard'; // active sub-tab
+
+function openMemberViewer(email, nick) {
   if(!email) return;
-  _memberViewActive = true;
-  _memberViewEmail  = email.toLowerCase();
-  _memberViewNick   = nick;
-  // Sidebar: show member account info
-  _updateSidebarAccountInfo();
-  // Show impersonation banner
-  const bar = document.getElementById('member-impersonate-bar');
-  if(bar) {
-    bar.style.display = 'block';
-    const lbl = document.getElementById('member-impersonate-label');
-    if(lbl) lbl.textContent = '👁 Viewing: ' + nick + ' (' + email + ')';
-  }
-  // Refresh current panel
-  showPanel(currentPanel);
+  _mvEmail = email.toLowerCase();
+  _mvNick  = nick || email.split('@')[0];
+
+  // Update header
+  const initial = _mvNick[0].toUpperCase();
+  const el = id => document.getElementById(id);
+  if(el('mv-avatar')) { el('mv-avatar').textContent = initial; }
+  if(el('mv-name'))   { el('mv-name').textContent   = _mvNick; }
+  if(el('mv-email'))  { el('mv-email').textContent  = _mvEmail; }
+
+  // Show viewer
+  const viewer = el('member-viewer');
+  if(viewer) { viewer.style.display = 'flex'; }
+
+  // Highlight active chip
+  document.querySelectorAll('.member-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.email === _mvEmail);
+  });
+
+  // Default to dashboard tab
+  switchMemberTab('mv-dashboard');
 }
 
-// Exit member impersonation — go back to own account view
-function exitMemberImpersonation() {
-  _memberViewActive = false;
-  _memberViewEmail  = null;
-  _memberViewNick   = null;
-  _updateSidebarAccountInfo();
-  const bar = document.getElementById('member-impersonate-bar');
-  if(bar) bar.style.display = 'none';
-  showPanel(currentPanel);
+function closeMemberViewer() {
+  const viewer = document.getElementById('member-viewer');
+  if(viewer) viewer.style.display = 'none';
+  _mvEmail = null;
+  _mvNick  = null;
+  // Deselect all chips, re-highlight self chip
+  document.querySelectorAll('.member-chip').forEach(c => {
+    c.classList.remove('active');
+    if(c.classList.contains('self')) c.classList.add('active');
+  });
 }
+
+function switchMemberTab(tab) {
+  _mvTab = tab;
+  // Update tab buttons
+  document.querySelectorAll('.mv-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  renderMemberViewerContent();
+}
+
+function renderMemberViewerContent() {
+  const c = document.getElementById('mv-content');
+  if(!c || !_mvEmail) return;
+
+  // Get all tasks for this member (assigned to OR assigned by)
+  const memberTasks = tasks.filter(t =>
+    (t.assignee||'').toLowerCase()  === _mvEmail ||
+    (t.assignedBy||'').toLowerCase() === _mvEmail
+  );
+  const myTasks = tasks.filter(t => (t.assignee||'').toLowerCase() === _mvEmail);
+
+  if(_mvTab === 'mv-dashboard') {
+    _renderMvDashboard(c, memberTasks, myTasks);
+  } else if(_mvTab === 'mv-mytasks') {
+    _renderMvMyTasks(c, myTasks);
+  } else if(_mvTab === 'mv-alltasks') {
+    _renderMvAllTasks(c, memberTasks);
+  } else if(_mvTab === 'mv-kanban') {
+    _renderMvKanban(c, myTasks);
+  } else if(_mvTab === 'mv-gantt') {
+    _renderMvGantt(c, myTasks);
+  } else if(_mvTab === 'mv-team') {
+    _renderMvTeam(c);
+  }
+}
+
+// ── Member Dashboard ────────────────────────────────────────────────────
+function _renderMvDashboard(c, memberTasks, myTasks) {
+  const total   = myTasks.length;
+  const done    = myTasks.filter(t=>t.status==='Done').length;
+  const inprog  = myTasks.filter(t=>t.status==='In Progress').length;
+  const todo    = myTasks.filter(t=>t.status==='To Do').length;
+  const review  = myTasks.filter(t=>t.status==='Review').length;
+  const overdue = myTasks.filter(isOverdue).length;
+  const rate    = total ? Math.round(done/total*100) : 0;
+
+  const stats = [
+    {label:'Total',       val:total,   col:'var(--accent)',  icon:'📋'},
+    {label:'To Do',       val:todo,    col:'var(--text3)',   icon:'📌'},
+    {label:'In Progress', val:inprog,  col:'var(--cyan)',    icon:'⚡'},
+    {label:'Review',      val:review,  col:'var(--purple)',  icon:'👁'},
+    {label:'Done',        val:done,    col:'var(--green)',   icon:'✅'},
+    {label:'Overdue',     val:overdue, col:'var(--red)',     icon:'🚨'},
+  ];
+
+  const colors = ['var(--accent)','var(--purple)','var(--green)','var(--amber)','var(--cyan)'];
+
+  // Task list (most recent 10)
+  const recentTasks = [...myTasks].sort((a,b)=>(b.created||'').localeCompare(a.created||'')).slice(0,10);
+  const taskRows = recentTasks.map(t => {
+    const overdue = isOverdue(t);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeMemberViewer();openDrawer('${t.id}')">
+      <span class="badge ${prioBadgeClass(t.priority)}" style="flex-shrink:0">${t.priority||'—'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</div>
+        <div style="font-size:11px;color:var(--text3)">${t.due?'📅 '+fmt(t.due):''} ${overdue?'<span style="color:var(--red)">⚠ Overdue</span>':''}</div>
+      </div>
+      <span class="badge ${t.status==='Done'?'badge-done':t.status==='In Progress'?'badge-inprog':t.status==='Review'?'badge-review':'badge-todo'}">${t.status}</span>
+    </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div style="margin-bottom:20px">
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px">📊 ${esc(_mvNick)}'s Dashboard</div>
+      <div style="font-size:13px;color:var(--text3)">${total} task(s) assigned · ${rate}% completion rate</div>
+    </div>
+
+    <!-- Stats grid -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:24px">
+      ${stats.map(s=>`
+      <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid ${s.col};border-radius:var(--radius);padding:14px 12px;text-align:center">
+        <div style="font-size:20px;margin-bottom:4px">${s.icon}</div>
+        <div style="font-size:24px;font-weight:800;color:${s.col};line-height:1">${s.val}</div>
+        <div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:4px;text-transform:uppercase;letter-spacing:.6px">${s.label}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Progress bar -->
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">Overall Completion</span>
+        <span style="font-size:13px;font-weight:800;color:var(--green)">${rate}%</span>
+      </div>
+      <div style="background:var(--bg);border-radius:8px;height:10px;overflow:hidden">
+        <div style="height:100%;width:${rate}%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:8px;transition:width .5s ease"></div>
+      </div>
+    </div>
+
+    <!-- Recent tasks -->
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text)">Recent Tasks</div>
+      ${taskRows || '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px;">No tasks assigned</div>'}
+    </div>`;
+}
+
+// ── Member My Tasks ─────────────────────────────────────────────────────
+function _renderMvMyTasks(c, myTasks) {
+  const todo    = myTasks.filter(t=>t.status==='To Do');
+  const inprog  = myTasks.filter(t=>t.status==='In Progress');
+  const review  = myTasks.filter(t=>t.status==='Review');
+  const done    = myTasks.filter(t=>t.status==='Done');
+  const overdue = myTasks.filter(isOverdue);
+
+  function taskRow(t) {
+    const od = isOverdue(t);
+    return `<div style="display:grid;grid-template-columns:1fr 100px 90px 80px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeMemberViewer();openDrawer('${t.id}')">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--text)">${esc(t.title)}</div>
+      <div style="font-size:12px;color:${od?'var(--red)':'var(--text3)'}">${t.due?fmt(t.due):'—'}</div>
+      <span class="badge ${prioBadgeClass(t.priority)}">${t.priority||'—'}</span>
+      <span class="badge ${t.status==='Done'?'badge-done':t.status==='In Progress'?'badge-inprog':t.status==='Review'?'badge-review':'badge-todo'}">${t.status}</span>
+    </div>`;
+  }
+
+  const sections = [
+    {label:'⚡ In Progress', tasks:inprog, col:'var(--cyan)'},
+    {label:'🚨 Overdue',     tasks:overdue,col:'var(--red)'},
+    {label:'👁 Review',      tasks:review, col:'var(--purple)'},
+    {label:'📌 To Do',       tasks:todo,   col:'var(--text3)'},
+    {label:'✅ Done',        tasks:done,   col:'var(--green)'},
+  ];
+
+  c.innerHTML = `
+    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">✅ ${esc(_mvNick)}'s Tasks (${myTasks.length})</div>
+    ${sections.map(s=>s.tasks.length?`
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:${s.col};text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding:0 2px">${s.label} · ${s.tasks.length}</div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 100px 90px 80px;gap:10px;padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border)">
+          <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Title</span>
+          <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Due</span>
+          <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Priority</span>
+          <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Status</span>
+        </div>
+        ${s.tasks.map(taskRow).join('')}
+      </div>
+    </div>`:'').join('')}
+    ${myTasks.length===0?'<div style="text-align:center;padding:40px;color:var(--text3);">No tasks assigned to this member</div>':''}`;
+}
+
+// ── Member All Tasks ────────────────────────────────────────────────────
+function _renderMvAllTasks(c, memberTasks) {
+  function taskRow(t) {
+    const od = isOverdue(t);
+    const isAssignee = (t.assignee||'').toLowerCase() === _mvEmail;
+    return `<div style="display:grid;grid-template-columns:1fr 130px 100px 90px 80px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeMemberViewer();openDrawer('${t.id}')">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--text)">${esc(t.title)}</div>
+      <div style="font-size:11px;color:var(--text3)">${isAssignee?'<span style="color:var(--accent);font-weight:600;">Assignee</span>':'<span style="color:var(--purple);font-weight:600;">Assigned by</span>'}</div>
+      <div style="font-size:12px;color:${od?'var(--red)':'var(--text3)'}">${t.due?fmt(t.due):'—'}</div>
+      <span class="badge ${prioBadgeClass(t.priority)}">${t.priority||'—'}</span>
+      <span class="badge ${t.status==='Done'?'badge-done':t.status==='In Progress'?'badge-inprog':t.status==='Review'?'badge-review':'badge-todo'}">${t.status}</span>
+    </div>`;
+  }
+
+  c.innerHTML = `
+    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">📋 All Tasks for ${esc(_mvNick)} (${memberTasks.length})</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 130px 100px 90px 80px;gap:10px;padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Title</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Role</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Due</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Priority</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Status</span>
+      </div>
+      ${memberTasks.map(taskRow).join('')}
+      ${memberTasks.length===0?'<div style="padding:32px;text-align:center;color:var(--text3);">No tasks found for this member</div>':''}
+    </div>`;
+}
+
+// ── Member Kanban ───────────────────────────────────────────────────────
+function _renderMvKanban(c, myTasks) {
+  const cols = STATUSES.map(status => {
+    const col = myTasks.filter(t=>t.status===status);
+    const color = STATUS_COLOR[status]||'var(--text3)';
+    const cards = col.map(t => {
+      const od = isOverdue(t);
+      return `<div style="background:var(--card2);border:1px solid var(--border);border-left:3px solid ${PRIO_COLOR[t.priority]||'var(--border)'};border-radius:var(--radius);padding:12px;margin-bottom:8px;cursor:pointer;" onclick="closeMemberViewer();openDrawer('${t.id}')">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+          <span class="badge ${prioBadgeClass(t.priority)}">${t.priority||''}</span>
+          ${od?'<span class="badge badge-overdue">Overdue</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--text3)">📅 ${t.due?fmt(t.due):'No date'}</div>
+      </div>`;
+    }).join('');
+    return `<div style="min-width:200px;flex:1">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:0 2px">
+        <div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0"></div>
+        <span style="font-size:12px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.6px">${status}</span>
+        <span style="font-size:11px;color:var(--text3);background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:1px 8px">${col.length}</span>
+      </div>
+      ${cards}
+      ${col.length===0?'<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:12px;border:2px dashed var(--border);border-radius:var(--radius)">Empty</div>':''}
+    </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">🗂 ${esc(_mvNick)}'s Kanban</div>
+    <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:12px">${cols}</div>`;
+}
+
+// ── Member Gantt ────────────────────────────────────────────────────────
+function _renderMvGantt(c, myTasks) {
+  const withDue = myTasks.filter(t=>t.due).sort((a,b)=>a.due.localeCompare(b.due));
+  const rows = withDue.map(t => {
+    const od = isOverdue(t);
+    const pct = t.status==='Done'?100:t.status==='In Progress'?50:t.status==='Review'?75:0;
+    return `<div style="display:grid;grid-template-columns:260px 1fr 90px;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="closeMemberViewer();openDrawer('${t.id}')">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--text)">${esc(t.title)}</div>
+      <div style="background:var(--bg);border-radius:6px;height:20px;overflow:hidden;position:relative">
+        <div style="height:100%;width:${pct}%;background:${od?'var(--red)':pct===100?'var(--green)':'var(--accent)'};border-radius:6px;transition:width .4s ease"></div>
+        <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${pct>40?'#fff':'var(--text2)'}">${pct}%</span>
+      </div>
+      <div style="font-size:11px;color:${od?'var(--red)':'var(--text3)'};text-align:right">${fmt(t.due)}</div>
+    </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">📅 ${esc(_mvNick)}'s Gantt</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="display:grid;grid-template-columns:260px 1fr 90px;gap:12px;padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border)">
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Task</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Progress</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;text-align:right">Due</span>
+      </div>
+      ${rows || '<div style="padding:32px;text-align:center;color:var(--text3);">No tasks with due dates</div>'}
+    </div>`;
+}
+
+// ── Member Team ─────────────────────────────────────────────────────────
+function _renderMvTeam(c) {
+  // People this member assigned tasks to, or who assigned tasks to this member
+  const relatedEmails = new Set();
+  tasks.forEach(t => {
+    const assignee   = (t.assignee||'').toLowerCase();
+    const assignedBy = (t.assignedBy||'').toLowerCase();
+    if(assignedBy === _mvEmail && assignee) relatedEmails.add(assignee);
+    if(assignee === _mvEmail && assignedBy) relatedEmails.add(assignedBy);
+  });
+  relatedEmails.delete(_mvEmail);
+
+  const members = [...relatedEmails].map(email => {
+    const nick = _nickCache[email] || email.split('@')[0];
+    const theirTasks = tasks.filter(t=>(t.assignee||'').toLowerCase()===email);
+    const done = theirTasks.filter(t=>t.status==='Done').length;
+    const pct  = theirTasks.length ? Math.round(done/theirTasks.length*100) : 0;
+    const colors = ['var(--accent)','var(--purple)','var(--green)','var(--amber)','var(--cyan)'];
+    const color = colors[email.charCodeAt(0)%colors.length];
+    const iAssigned    = tasks.some(t=>(t.assignedBy||'').toLowerCase()===_mvEmail&&(t.assignee||'').toLowerCase()===email);
+    const theyAssigned = tasks.some(t=>(t.assignee||'').toLowerCase()===_mvEmail&&(t.assignedBy||'').toLowerCase()===email);
+    return {email,nick,total:theirTasks.length,done,pct,color,iAssigned,theyAssigned};
+  });
+
+  const cards = members.map(m=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid ${m.color};border-radius:var(--radius);padding:16px;cursor:pointer;" onclick="openMemberViewer('${m.email}','${m.nick.replace(/'/g,"\'")}')">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:40px;height:40px;border-radius:50%;background:${m.color}22;border:2px solid ${m.color}44;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:${m.color};flex-shrink:0">${m.nick.slice(0,2).toUpperCase()}</div>
+        <div>
+          <div style="font-weight:700;font-size:14px;color:var(--text)">${esc(m.nick)}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">
+            ${m.iAssigned?'<span style="font-size:10px;font-weight:700;color:var(--green);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);border-radius:4px;padding:1px 6px;">Assigned by '+esc(_mvNick)+'</span>':''}
+            ${m.theyAssigned?'<span style="font-size:10px;font-weight:700;color:var(--purple);background:rgba(179,102,255,.1);border:1px solid rgba(179,102,255,.25);border-radius:4px;padding:1px 6px;">Assigned '+esc(_mvNick)+'</span>':''}
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;text-align:center">
+        <div style="background:var(--bg);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:800;color:var(--accent)">${m.total}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase">Total</div></div>
+        <div style="background:var(--bg);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:800;color:var(--green)">${m.done}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase">Done</div></div>
+        <div style="background:var(--bg);border-radius:6px;padding:6px"><div style="font-size:18px;font-weight:800;color:var(--purple)">${m.pct}%</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase">Rate</div></div>
+      </div>
+      <div style="background:var(--bg);border-radius:6px;height:6px;overflow:hidden"><div style="height:100%;width:${m.pct}%;background:${m.color};transition:width .4s"></div></div>
+    </div>`).join('');
+
+  c.innerHTML = `
+    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">👥 ${esc(_mvNick)}'s Team (${members.length})</div>
+    ${members.length===0
+      ? '<div style="text-align:center;padding:40px;color:var(--text3);">No connected team members found</div>'
+      : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${cards}</div>`}`;
+}
+
+// ── Compatibility shim for old enterMemberImpersonation calls ──────────
+function enterMemberImpersonation(email, nick) { openMemberViewer(email, nick); }
+function exitMemberImpersonation() { closeMemberViewer(); }
 
 // Update sidebar account detail block
 function _updateSidebarAccountInfo() {
@@ -5894,6 +6255,53 @@ function _updateSidebarAccountInfo() {
   }
 }
 
+// ── Build the global member bar (called after login + after group members load) ──
+function buildGlobalMemberBar() {
+  const bar   = document.getElementById('global-member-bar');
+  const chips = document.getElementById('global-member-chips');
+  if(!bar || !chips) return;
+
+  const selfEmail = getSessionEmail().toLowerCase();
+  const selfNick  = getSessionNick() || selfEmail.split('@')[0];
+
+  // Gather: self + group members
+  const members = [];
+  if(selfEmail) members.push({ email: selfEmail, nick: selfNick, isSelf: true });
+  (_myGroupMemberEmails || []).forEach(email => {
+    const e = email.toLowerCase();
+    if(e !== selfEmail) {
+      const nick = _nickCache[e] || e.split('@')[0];
+      members.push({ email: e, nick, isSelf: false });
+    }
+  });
+
+  if(members.length < 1) { bar.style.display = 'none'; return; }
+
+  // Build chips
+  chips.innerHTML = '';
+  members.forEach(m => {
+    const btn = document.createElement('button');
+    btn.className = 'member-chip' + (m.isSelf ? ' self active' : '');
+    btn.dataset.email = m.email;
+    btn.textContent = m.nick;
+    btn.title = m.email;
+    btn.onclick = () => {
+      if(m.isSelf) {
+        closeMemberViewer();
+        // Re-highlight self
+        document.querySelectorAll('.member-chip').forEach(c => {
+          c.classList.toggle('active', c.dataset.email === selfEmail);
+        });
+      } else {
+        openMemberViewer(m.email, m.nick);
+      }
+    };
+    chips.appendChild(btn);
+  });
+
+  bar.style.display = 'flex';
+}
+
 async function _loadGroupMemberEmails(adminEmail) {
   _myGroupMemberEmails = [];
   if (!_fbReady || !_db) return;
@@ -5909,10 +6317,8 @@ async function _loadGroupMemberEmails(adminEmail) {
     if(_allAppUsers && _allAppUsers.length){
       _allAppUsers.forEach(u => { if(u.email && u.nickname) _nickCache[u.email.toLowerCase()] = u.nickname; });
     }
-    // Refresh current panel's filter tabs to show member chips
-    if(currentPanel && ['dashboard','tasks','gantt'].includes(currentPanel)){
-      showPanel(currentPanel);
-    }
+    // Rebuild global member bar with fresh nicknames
+    buildGlobalMemberBar();
     // Update sidebar account info
     _updateSidebarAccountInfo();
   } catch(e) { console.warn('[Role] Could not load group members:', e.message); }
@@ -5956,6 +6362,8 @@ function _activateRoleSession(role) {
   if(currentSession && currentSession.email){
     _startNotifListener(currentSession.email.toLowerCase());
   }
+  // Build global member bar (may be just self until group members load)
+  buildGlobalMemberBar();
 }
 
 function _injectRoleNavItems(role) {
@@ -8789,6 +9197,9 @@ function _stopNotifListener() {
   _notifUserEmail = null;
   _notifications = [];
   refreshNotifBadge();
+  // Hide global member bar on logout
+  const bar = document.getElementById('global-member-bar');
+  if(bar) bar.style.display = 'none';
 }
 
 // ── Push a notification to a user's Firestore notif doc ──────────────
