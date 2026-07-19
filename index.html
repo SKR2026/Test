@@ -810,12 +810,12 @@
         </div>
         <!-- Member sub-tabs -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;" id="mv-tabs">
-          <button class="mv-tab active" data-tab="mv-dashboard" onclick="switchMemberTab('mv-dashboard')" data-color="#5b8dee">📊 Dashboard</button>
-          <button class="mv-tab" data-tab="mv-mytasks"   onclick="switchMemberTab('mv-mytasks')"  data-color="#10b981">✅ My Tasks</button>
-          <button class="mv-tab" data-tab="mv-alltasks"  onclick="switchMemberTab('mv-alltasks')" data-color="#8b5cf6">📋 All Tasks</button>
-          <button class="mv-tab" data-tab="mv-kanban"    onclick="switchMemberTab('mv-kanban')"   data-color="#f59e0b">🗂 Kanban</button>
-          <button class="mv-tab" data-tab="mv-gantt"     onclick="switchMemberTab('mv-gantt')"    data-color="#06b6d4">📅 Gantt</button>
-          <button class="mv-tab" data-tab="mv-team"      onclick="switchMemberTab('mv-team')"     data-color="#f472b6">👥 Team</button>
+          <button class="mv-tab pill-active active" data-tab="mv-dashboard" onclick="switchMemberTab('mv-dashboard')" data-color="#5b8dee" style="--pc:#5b8dee">📊 Dashboard</button>
+          <button class="mv-tab" data-tab="mv-mytasks"   onclick="switchMemberTab('mv-mytasks')"  data-color="#10b981" style="--pc:#10b981">✅ My Tasks</button>
+          <button class="mv-tab" data-tab="mv-alltasks"  onclick="switchMemberTab('mv-alltasks')" data-color="#8b5cf6" style="--pc:#8b5cf6">📋 All Tasks</button>
+          <button class="mv-tab" data-tab="mv-kanban"    onclick="switchMemberTab('mv-kanban')"   data-color="#f59e0b" style="--pc:#f59e0b">🗂 Kanban</button>
+          <button class="mv-tab" data-tab="mv-gantt"     onclick="switchMemberTab('mv-gantt')"    data-color="#06b6d4" style="--pc:#06b6d4">📅 Gantt</button>
+          <button class="mv-tab" data-tab="mv-team"      onclick="switchMemberTab('mv-team')"     data-color="#f472b6" style="--pc:#f472b6">👥 Team</button>
         </div>
       </div>
       <!-- Member viewer content -->
@@ -1849,13 +1849,20 @@ function showPanel(name){
     const bar = document.getElementById('global-member-bar');
     if(bar && bar.style.display !== 'flex') buildGlobalMemberBar();
     // Ensure self chip is highlighted when not in member viewer
-    if(!document.getElementById('member-viewer') || document.getElementById('member-viewer').style.display === 'none'){
-      const myEmail = _getMyEmail();
-      document.querySelectorAll('.member-chip').forEach(c => {
-        const isActive = (myEmail && c.dataset.email === myEmail) || c.classList.contains('self');
-        c.classList.toggle('active', isActive);
-        if(c._applyActive) c._applyActive(isActive);
+    // Re-apply chip colours and active state on every tab switch
+    const _spChips = document.getElementById('global-member-chips');
+    if(_spChips){
+      // Ensure --pc is set on every chip (survives DOM reuse)
+      _spChips.querySelectorAll('.member-chip').forEach(c => {
+        if(c.dataset.color) c.style.setProperty('--pc', c.dataset.color);
       });
+      // If viewer is closed, keep self chip active
+      const viewer = document.getElementById('member-viewer');
+      const viewerOpen = viewer && viewer.style.display === 'flex';
+      if(!viewerOpen){
+        const firstChip = _spChips.querySelector('.member-chip');
+        if(firstChip) _setAllChips(_spChips, firstChip.dataset.email);
+      }
     }
   }
 }
@@ -2418,60 +2425,44 @@ function renderDashboard(){
     @keyframes fbPulse { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.2);opacity:0} }
   @keyframes notifPop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
 
-  /* ── Global Member Chips ── */
-  .member-chip {
-    display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:50px;
+  /* ══ Colourful Pills — member chips & mv-tabs ══
+     Each element carries data-color="#hex". JS sets --pc on the element.
+     These rules then handle all states using that one variable. */
+  .pill-btn {
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 16px;border-radius:50px;
     font-size:12px;font-weight:700;cursor:pointer;
-    border:2px solid var(--chip-col, var(--border2));
-    background:var(--card);
-    color:var(--chip-col, var(--text2));
-    transition:all .18s;white-space:nowrap;letter-spacing:.2px;
-    box-shadow:none;
+    border:2px solid var(--pc,#5b8dee);
+    background:transparent;
+    color:var(--pc,#5b8dee);
+    font-family:var(--font-body);
+    transition:background .15s, color .15s, box-shadow .15s, transform .15s;
+    white-space:nowrap;letter-spacing:.3px;
+    user-select:none;
   }
-  .member-chip:hover {
-    background:var(--chip-col, var(--accent));
-    color:#fff;
-    border-color:var(--chip-col, var(--accent));
+  .pill-btn:hover {
+    background:color-mix(in srgb,var(--pc,#5b8dee) 12%,transparent);
     transform:translateY(-1px);
-    box-shadow:0 4px 12px color-mix(in srgb, var(--chip-col, var(--accent)) 40%, transparent);
   }
-  .member-chip.self {
-    border-color:#8b5cf6;color:#8b5cf6;background:rgba(139,92,246,.08);
-    --chip-col:#8b5cf6;
-  }
-  .member-chip.active {
-    background:var(--chip-col, var(--accent));
+  .pill-btn.pill-active {
+    background:var(--pc,#5b8dee) !important;
     color:#fff !important;
-    border-color:var(--chip-col, var(--accent));
-    box-shadow:0 4px 14px color-mix(in srgb, var(--chip-col, var(--accent)) 45%, transparent);
+    border-color:var(--pc,#5b8dee) !important;
+    box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#5b8dee) 50%,transparent);
     transform:translateY(-1px);
   }
-
-  /* ── Member Viewer Sub-tabs ── */
-  .mv-tab {
-    padding:7px 16px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;
-    border:2px solid transparent;background:var(--card2);color:var(--text2);
-    font-family:var(--font-body);transition:all .18s;white-space:nowrap;
-    position:relative;overflow:hidden;letter-spacing:.2px;
+  /* Fallback for browsers without color-mix */
+  @supports not (background:color-mix(in srgb,red 10%,transparent)) {
+    .pill-btn:hover { background:rgba(91,141,238,.12); }
+    .pill-btn.pill-active { box-shadow:0 4px 18px rgba(91,141,238,.45); }
   }
-  .mv-tab::before {
-    content:'';position:absolute;inset:0;opacity:0;transition:opacity .18s;
-    background:linear-gradient(135deg,var(--mv-c,#5b8dee),var(--mv-c2,#3d6dd4));
-  }
-  .mv-tab:hover {
-    border-color:var(--mv-c,var(--accent));
-    color:var(--mv-c,var(--accent));
-    background:var(--card);
-    transform:translateY(-1px);
-    box-shadow:0 4px 12px rgba(0,0,0,.15);
-  }
-  .mv-tab.active {
-    background:var(--mv-c,var(--accent));
-    border-color:var(--mv-c,var(--accent));
-    color:#fff;
-    box-shadow:0 4px 16px rgba(0,0,0,.2);
-    transform:translateY(-1px);
-  }
+  /* Keep member-chip and mv-tab as aliases */
+  .member-chip { display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid var(--pc,#8b5cf6);background:transparent;color:var(--pc,#8b5cf6);font-family:var(--font-body);transition:background .15s,color .15s,box-shadow .15s,transform .15s;white-space:nowrap;letter-spacing:.3px;user-select:none; }
+  .member-chip:hover { background:color-mix(in srgb,var(--pc,#8b5cf6) 12%,transparent);transform:translateY(-1px); }
+  .member-chip.pill-active { background:var(--pc,#8b5cf6)!important;color:#fff!important;border-color:var(--pc,#8b5cf6)!important;box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#8b5cf6) 50%,transparent);transform:translateY(-1px); }
+  .mv-tab { display:inline-flex;align-items:center;gap:6px;padding:7px 18px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid var(--pc,#5b8dee);background:transparent;color:var(--pc,#5b8dee);font-family:var(--font-body);transition:background .15s,color .15s,box-shadow .15s,transform .15s;white-space:nowrap;letter-spacing:.3px;user-select:none; }
+  .mv-tab:hover { background:color-mix(in srgb,var(--pc,#5b8dee) 12%,transparent);transform:translateY(-1px); }
+  .mv-tab.pill-active { background:var(--pc,#5b8dee)!important;color:#fff!important;border-color:var(--pc,#5b8dee)!important;box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#5b8dee) 50%,transparent);transform:translateY(-1px); }
 
   /* ── Member viewer slide-in ── */
   #member-viewer { animation: mvSlideIn .2s ease; }
@@ -5981,12 +5972,11 @@ function openMemberViewer(email, nick) {
   const viewer = el('member-viewer');
   if(viewer) { viewer.style.display = 'flex'; }
 
-  // Highlight active chip with colour
-  document.querySelectorAll('.member-chip').forEach(c => {
-    const isActive = c.dataset.email === _mvEmail;
-    c.classList.toggle('active', isActive);
-    if(c._applyActive) c._applyActive(isActive);
-  });
+  // Highlight active chip
+  const _mvChips = document.getElementById('global-member-chips');
+  if(_mvChips) _setAllChips(_mvChips, _mvEmail);
+  // Apply pill colours to mv-tabs (in case viewer was re-opened)
+  setTimeout(() => _applyMvTabColours(_mvTab || 'mv-dashboard'), 0);
 
   // Default to dashboard tab
   switchMemberTab('mv-dashboard');
@@ -5998,59 +5988,28 @@ function closeMemberViewer() {
   if(viewer) viewer.style.display = 'none';
   _mvEmail = null;
   _mvNick  = null;
-  // Re-highlight self chip only
-  document.querySelectorAll('.member-chip').forEach(c => {
-    const isSelf = c.classList.contains('self');
-    c.classList.toggle('active', isSelf);
-    if(c._applyActive) c._applyActive(isSelf);
-  });
+  // Restore self chip as active
+  const _closeChips = document.getElementById('global-member-chips');
+  if(_closeChips){
+    const selfC = _closeChips.querySelector('.member-chip');
+    if(selfC) _setAllChips(_closeChips, selfC.dataset.email);
+  }
 }
 
 function switchMemberTab(tab) {
   _mvTab = tab;
-  // Update tab buttons — apply each tab's own colour when active
   document.querySelectorAll('.mv-tab').forEach(b => {
-    const isActive = b.dataset.tab === tab;
-    const col = b.dataset.color || 'var(--accent)';
-    b.classList.toggle('active', isActive);
-    // Set CSS custom property so the active colour uses this tab's colour
-    b.style.setProperty('--mv-c', col);
-    if(isActive){
-      b.style.background = col;
-      b.style.borderColor = col;
-      b.style.color = '#fff';
-      b.style.boxShadow = `0 4px 16px ${col}55`;
-    } else {
-      b.style.background = '';
-      b.style.borderColor = '';
-      b.style.color = '';
-      b.style.boxShadow = '';
-    }
+    const col = b.dataset.color || '#5b8dee';
+    // Ensure --pc is set (survives re-reads across tab switches)
+    b.style.setProperty('--pc', col);
+    b.classList.toggle('pill-active', b.dataset.tab === tab);
+    b.classList.toggle('active', b.dataset.tab === tab); // keep for compatibility
   });
   renderMemberViewerContent();
 }
 
-// Apply colours on initial open too
 function _applyMvTabColours(activeTab) {
-  document.querySelectorAll('.mv-tab').forEach(b => {
-    const col = b.dataset.color || 'var(--accent)';
-    const isActive = b.dataset.tab === activeTab;
-    b.style.setProperty('--mv-c', col);
-    if(isActive){
-      b.style.background = col;
-      b.style.borderColor = col;
-      b.style.color = '#fff';
-      b.style.boxShadow = `0 4px 16px ${col}55`;
-    } else {
-      b.style.background = '';
-      b.style.borderColor = '';
-      b.style.color = '';
-      b.style.boxShadow = '';
-      // subtle tinted border on hover hint
-      b.onmouseenter = () => { b.style.borderColor = col; b.style.color = col; };
-      b.onmouseleave = () => { b.style.borderColor = ''; b.style.color = ''; };
-    }
-  });
+  switchMemberTab(activeTab);
 }
 
 function renderMemberViewerContent() {
@@ -6562,68 +6521,40 @@ function buildGlobalMemberBar() {
 
   if(members.length < 1) { bar.style.display = 'none'; return; }
 
-  // Colour palette — one distinct colour per member slot
-  const CHIP_COLORS = [
-    '#8b5cf6', // self — always purple
-    '#5b8dee', // member 1 — blue
-    '#10b981', // member 2 — green
-    '#f59e0b', // member 3 — amber
-    '#06b6d4', // member 4 — cyan
-    '#f472b6', // member 5 — pink
-    '#ef4444', // member 6 — red
-    '#f97316', // member 7 — orange
-  ];
+  const CHIP_COLORS = ['#8b5cf6','#5b8dee','#10b981','#f59e0b','#06b6d4','#f472b6','#ef4444','#f97316'];
 
-  // Build chips
   chips.innerHTML = '';
   members.forEach((m, idx) => {
     const col = CHIP_COLORS[idx % CHIP_COLORS.length];
     const btn = document.createElement('button');
-    btn.className = 'member-chip' + (m.isSelf ? ' self active' : '');
+    btn.className = 'member-chip';
     btn.dataset.email = m.email;
     btn.dataset.color = col;
     btn.textContent = m.nick;
     btn.title = m.email;
-    btn.style.setProperty('--chip-col', col);
-    // Apply active (filled) style inline so it works on all tabs
-    const applyActive = (active) => {
-      if(active){
-        btn.style.background = col;
-        btn.style.color = '#fff';
-        btn.style.borderColor = col;
-        btn.style.boxShadow = `0 4px 14px ${col}70`;
-        btn.style.transform = 'translateY(-1px)';
-      } else {
-        btn.style.background = '';
-        btn.style.color = col;
-        btn.style.borderColor = col;
-        btn.style.boxShadow = '';
-        btn.style.transform = '';
-      }
-    };
+    // Set CSS custom property — drives all CSS pill states
+    btn.style.setProperty('--pc', col);
     btn.onclick = () => {
-      if(m.isSelf) {
+      if(m.isSelf){
         closeMemberViewer();
-        chips.querySelectorAll('.member-chip').forEach(c => {
-          const isMe = c.dataset.email === selfEmail;
-          c.classList.toggle('active', isMe);
-          c._applyActive && c._applyActive(isMe);
-        });
+        _setAllChips(chips, selfEmail);
       } else {
         openMemberViewer(m.email, m.nick);
-        chips.querySelectorAll('.member-chip').forEach(c => {
-          const isThis = c.dataset.email === m.email;
-          c.classList.toggle('active', isThis);
-          c._applyActive && c._applyActive(isThis);
-        });
+        _setAllChips(chips, m.email);
       }
     };
-    btn._applyActive = applyActive;
-    applyActive(m.isSelf); // self starts active
+    if(m.isSelf) btn.classList.add('pill-active');
     chips.appendChild(btn);
   });
 
   bar.style.display = 'flex';
+}
+
+// Activate exactly one chip, deactivate all others
+function _setAllChips(container, activeEmail) {
+  container.querySelectorAll('.member-chip').forEach(c => {
+    c.classList.toggle('pill-active', c.dataset.email === activeEmail);
+  });
 }
 
 async function _loadGroupMemberEmails(adminEmail) {
