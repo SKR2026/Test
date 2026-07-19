@@ -632,6 +632,65 @@
     .kanban { grid-template-columns: 1fr; }
     .drawer { max-width: 100%; }
   }
+
+  /* ══════════════════════════════════════════════════════════════
+     COLOURFUL PILL BUTTONS — member chips & member viewer tabs
+     Each element gets --pc:#hex via inline style or JS.
+     These rules handle all visual states from that one variable.
+     THIS BLOCK MUST STAY IN <head> — never inside innerHTML.
+     ══════════════════════════════════════════════════════════════ */
+  .member-chip {
+    display:inline-flex;align-items:center;gap:6px;padding:6px 16px;
+    border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;
+    border:2px solid var(--pc,#8b5cf6);
+    background:transparent;
+    color:var(--pc,#8b5cf6);
+    font-family:var(--font-body);
+    transition:background .15s,color .15s,box-shadow .15s,transform .15s;
+    white-space:nowrap;letter-spacing:.3px;user-select:none;
+  }
+  .member-chip:hover {
+    background:var(--pc,#8b5cf6);
+    color:#fff;
+    transform:translateY(-1px);
+    opacity:.85;
+  }
+  .member-chip.pill-active {
+    background:var(--pc,#8b5cf6) !important;
+    color:#fff !important;
+    border-color:var(--pc,#8b5cf6) !important;
+    box-shadow:0 4px 18px rgba(139,92,246,.45);
+    transform:translateY(-1px);
+  }
+
+  .mv-tab {
+    display:inline-flex;align-items:center;gap:6px;padding:7px 18px;
+    border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;
+    border:2px solid var(--pc,#5b8dee);
+    background:transparent;
+    color:var(--pc,#5b8dee);
+    font-family:var(--font-body);
+    transition:background .15s,color .15s,box-shadow .15s,transform .15s;
+    white-space:nowrap;letter-spacing:.3px;user-select:none;
+  }
+  .mv-tab:hover {
+    background:var(--pc,#5b8dee);
+    color:#fff;
+    transform:translateY(-1px);
+    opacity:.85;
+  }
+  .mv-tab.pill-active {
+    background:var(--pc,#5b8dee) !important;
+    color:#fff !important;
+    border-color:var(--pc,#5b8dee) !important;
+    box-shadow:0 4px 18px rgba(91,141,238,.45);
+    transform:translateY(-1px);
+  }
+
+  /* ── Member viewer slide-in ── */
+  #member-viewer { animation:mvSlideIn .2s ease; }
+  @keyframes mvSlideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+  @keyframes notifPop  { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
 </style>
 </head>
 <body>
@@ -2423,50 +2482,7 @@ function renderDashboard(){
   </div>
   <style>
     @keyframes fbPulse { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.2);opacity:0} }
-  @keyframes notifPop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
-
-  /* ══ Colourful Pills — member chips & mv-tabs ══
-     Each element carries data-color="#hex". JS sets --pc on the element.
-     These rules then handle all states using that one variable. */
-  .pill-btn {
-    display:inline-flex;align-items:center;gap:6px;
-    padding:6px 16px;border-radius:50px;
-    font-size:12px;font-weight:700;cursor:pointer;
-    border:2px solid var(--pc,#5b8dee);
-    background:transparent;
-    color:var(--pc,#5b8dee);
-    font-family:var(--font-body);
-    transition:background .15s, color .15s, box-shadow .15s, transform .15s;
-    white-space:nowrap;letter-spacing:.3px;
-    user-select:none;
-  }
-  .pill-btn:hover {
-    background:color-mix(in srgb,var(--pc,#5b8dee) 12%,transparent);
-    transform:translateY(-1px);
-  }
-  .pill-btn.pill-active {
-    background:var(--pc,#5b8dee) !important;
-    color:#fff !important;
-    border-color:var(--pc,#5b8dee) !important;
-    box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#5b8dee) 50%,transparent);
-    transform:translateY(-1px);
-  }
-  /* Fallback for browsers without color-mix */
-  @supports not (background:color-mix(in srgb,red 10%,transparent)) {
-    .pill-btn:hover { background:rgba(91,141,238,.12); }
-    .pill-btn.pill-active { box-shadow:0 4px 18px rgba(91,141,238,.45); }
-  }
-  /* Keep member-chip and mv-tab as aliases */
-  .member-chip { display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid var(--pc,#8b5cf6);background:transparent;color:var(--pc,#8b5cf6);font-family:var(--font-body);transition:background .15s,color .15s,box-shadow .15s,transform .15s;white-space:nowrap;letter-spacing:.3px;user-select:none; }
-  .member-chip:hover { background:color-mix(in srgb,var(--pc,#8b5cf6) 12%,transparent);transform:translateY(-1px); }
-  .member-chip.pill-active { background:var(--pc,#8b5cf6)!important;color:#fff!important;border-color:var(--pc,#8b5cf6)!important;box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#8b5cf6) 50%,transparent);transform:translateY(-1px); }
-  .mv-tab { display:inline-flex;align-items:center;gap:6px;padding:7px 18px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid var(--pc,#5b8dee);background:transparent;color:var(--pc,#5b8dee);font-family:var(--font-body);transition:background .15s,color .15s,box-shadow .15s,transform .15s;white-space:nowrap;letter-spacing:.3px;user-select:none; }
-  .mv-tab:hover { background:color-mix(in srgb,var(--pc,#5b8dee) 12%,transparent);transform:translateY(-1px); }
-  .mv-tab.pill-active { background:var(--pc,#5b8dee)!important;color:#fff!important;border-color:var(--pc,#5b8dee)!important;box-shadow:0 4px 18px color-mix(in srgb,var(--pc,#5b8dee) 50%,transparent);transform:translateY(-1px); }
-
-  /* ── Member viewer slide-in ── */
-  #member-viewer { animation: mvSlideIn .2s ease; }
-  @keyframes mvSlideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+    @keyframes notifPop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
   </style>
 
   <div class="stats-grid fade-in" id="dash-stats-grid">
