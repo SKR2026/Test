@@ -3604,12 +3604,18 @@ function renderReminders(){
 // ═══════════════════════════════════════════════════════════════════════
 function renderTeam(){
   // Use ALL tasks (not scoped) so we see the full team picture
+  const authorisedEmails = _getAuthorisedEmails();
   const allTasks = (plantOwnerAuthenticated && currentPlantSession)
     ? tasks.filter(t => {
         const owners = (currentPlantSession.owners||[]).map(o=>o.toLowerCase());
         return owners.includes((t.assignee||'').toLowerCase()) || (t.plant && t.plant === currentPlantSession.id);
       })
-    : tasks;
+    : tasks.filter(t => {
+        // Only include tasks of authorised (accepted) members
+        const assignee   = (t.assignee||'').toLowerCase();
+        const assignedBy = (t.assignedBy||'').toLowerCase();
+        return authorisedEmails.has(assignee) || authorisedEmails.has(assignedBy);
+      });
 
   const me = currentSession ? currentSession.email.toLowerCase() : null;
 
@@ -5469,10 +5475,26 @@ function _getSessionEmail() {
   return '';
 }
 
+// Returns the list of emails this account holder is allowed to see tasks for.
+// Only emails of users who have ACCEPTED a group invitation appear here.
+function _getAuthorisedEmails() {
+  const myEmail = _getMyEmail();
+  const authorised = new Set();
+  if(myEmail) authorised.add(myEmail);
+  // Add only accepted group members (stored in _myGroupMemberEmails after _approveGroupRequest / _acceptGroupInvite)
+  (_myGroupMemberEmails || []).forEach(e => authorised.add(e.toLowerCase()));
+  return authorised;
+}
+
 function getScopedTasks(){
-  // ── Member-view impersonation: show only that member's tasks ──
+  // ── Member-viewer: only show if that member is an accepted group member ──
   if(_memberViewActive && _memberViewEmail){
     const memberEmail = _memberViewEmail.toLowerCase();
+    const authorised  = _getAuthorisedEmails();
+    // Disallow viewing if not an accepted member and not self
+    if(!authorised.has(memberEmail)){
+      return []; // no access
+    }
     return tasks.filter(t =>
       (t.assignee||'').toLowerCase() === memberEmail ||
       (t.assignedBy||'').toLowerCase() === memberEmail
@@ -5488,19 +5510,31 @@ function getScopedTasks(){
     );
   }
 
-  // Superadmin — sees everything
-  if(adminAuthenticated && !currentSession) return tasks;
-
-  // Admin / User — show tasks assigned TO me OR BY me
-  if(currentSession){
-    const me = currentSession.email.toLowerCase();
+  // Superadmin — only own tasks + tasks of accepted group members
+  if(adminAuthenticated && !currentSession){
+    const authorised = _getAuthorisedEmails();
+    if(authorised.size === 0) return [];
     return tasks.filter(t =>
-      (t.assignee||'').toLowerCase() === me ||
-      (t.assignedBy||'').toLowerCase() === me
+      authorised.has((t.assignee||'').toLowerCase()) ||
+      authorised.has((t.assignedBy||'').toLowerCase())
     );
   }
 
-  return tasks;
+  // Admin / User — own tasks + tasks of accepted group members only
+  if(currentSession){
+    const me         = currentSession.email.toLowerCase();
+    const authorised = _getAuthorisedEmails();
+    return tasks.filter(t => {
+      const assignee   = (t.assignee||'').toLowerCase();
+      const assignedBy = (t.assignedBy||'').toLowerCase();
+      // Own tasks always visible
+      if(assignee === me || assignedBy === me) return true;
+      // Other users' tasks only if they are accepted group members
+      return authorised.has(assignee) || authorised.has(assignedBy);
+    });
+  }
+
+  return [];
 }
 
 // "My Tasks" tab — only tasks assigned TO the current user
@@ -5958,7 +5992,8 @@ async function _getSettingDoc(docId) {
 }
 
 // ── Group member email cache (populated for admin on login) ──────────
-let _myGroupMemberEmails = [];
+let _myGroupMemberEmails = []; // accepted group members
+let _myGroupPendingEmails = []; // invited but not yet accepted
 // ── Member view impersonation state ──
 let _memberViewActive   = false;   // true while viewing another member
 let _memberViewEmail    = null;    // email of member being viewed
@@ -5974,7 +6009,14 @@ let _mvTab    = 'mv-dashboard'; // active sub-tab
 
 function openMemberViewer(email, nick) {
   if(!email) return;
-  _mvEmail = email.toLowerCase();
+  const targetEmail = email.toLowerCase();
+  // Check authorisation — only accepted group members can be viewed
+  const authorised = _getAuthorisedEmails();
+  if(!authorised.has(targetEmail)){
+    toast('⚠ You can only view members who have accepted your group invitation.', 'var(--amber)');
+    return;
+  }
+  _mvEmail = targetEmail;
   _mvNick  = nick || email.split('@')[0];
 
   // Update header
@@ -6031,6 +6073,21 @@ function _applyMvTabColours(activeTab) {
 function renderMemberViewerContent() {
   const c = document.getElementById('mv-content');
   if(!c || !_mvEmail) return;
+
+  // Re-check authorisation every render
+  const authorised = _getAuthorisedEmails();
+  if(!authorised.has(_mvEmail)){
+    c.innerHTML = `<div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:48px;margin-bottom:16px">🔒</div>
+      <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">Access Restricted</div>
+      <div style="font-size:14px;color:var(--text3);max-width:360px;margin:0 auto;line-height:1.6">
+        <strong>${esc(_mvNick)}</strong> has not accepted your group invitation yet.<br/>
+        Once they accept, you will be able to view their tasks here.
+      </div>
+      <button class="btn btn-primary" style="margin-top:20px" onclick="closeMemberViewer()">← Back</button>
+    </div>`;
+    return;
+  }
 
   // Get all tasks for this member (assigned to OR assigned by)
   const memberTasks = tasks.filter(t =>
@@ -6524,41 +6581,59 @@ function buildGlobalMemberBar() {
   const selfEmail = getSessionEmail().toLowerCase();
   const selfNick  = getSessionNick() || selfEmail.split('@')[0];
 
-  // Gather: self + group members
+  // Gather: self + accepted group members + pending invitees
   const members = [];
   if(selfEmail) members.push({ email: selfEmail, nick: selfNick, isSelf: true });
   (_myGroupMemberEmails || []).forEach(email => {
     const e = email.toLowerCase();
     if(e !== selfEmail) {
       const nick = _nickCache[e] || e.split('@')[0];
-      members.push({ email: e, nick, isSelf: false });
+      members.push({ email: e, nick, isSelf: false, isPending: false });
+    }
+  });
+  // Also add pending invitees (show as locked chips)
+  (_myGroupPendingEmails || []).forEach(email => {
+    const e = email.toLowerCase();
+    if(e !== selfEmail && !members.find(m => m.email === e)) {
+      const nick = _nickCache[e] || e.split('@')[0];
+      members.push({ email: e, nick, isSelf: false, isPending: true });
     }
   });
 
   if(members.length < 1) { bar.style.display = 'none'; return; }
 
   const CHIP_COLORS = ['#8b5cf6','#5b8dee','#10b981','#f59e0b','#06b6d4','#f472b6','#ef4444','#f97316'];
+  const acceptedSet = _getAuthorisedEmails();
 
   chips.innerHTML = '';
   members.forEach((m, idx) => {
-    const col = CHIP_COLORS[idx % CHIP_COLORS.length];
+    const col       = CHIP_COLORS[idx % CHIP_COLORS.length];
+    const isAccepted = m.isSelf || (!m.isPending && acceptedSet.has(m.email.toLowerCase()));
     const btn = document.createElement('button');
     btn.className = 'member-chip';
     btn.dataset.email = m.email;
-    btn.dataset.color = col;
-    btn.textContent = m.nick;
-    btn.title = m.email;
-    // Set CSS custom property — drives all CSS pill states
-    btn.style.setProperty('--pc', col);
-    btn.onclick = () => {
-      if(m.isSelf){
-        closeMemberViewer();
-        _setAllChips(chips, selfEmail);
-      } else {
-        openMemberViewer(m.email, m.nick);
-        _setAllChips(chips, m.email);
-      }
-    };
+    btn.dataset.color = isAccepted ? col : '#9ca3af';
+    btn.title = m.email + (isAccepted ? '' : ' — invitation pending');
+    // Set CSS custom property
+    btn.style.setProperty('--pc', isAccepted ? col : '#9ca3af');
+    if(!isAccepted){
+      // Pending: greyed out, lock icon, not clickable as viewer
+      btn.textContent = '🔒 ' + m.nick;
+      btn.style.opacity = '0.5';
+      btn.style.cursor  = 'not-allowed';
+      btn.onclick = () => toast('⏳ ' + m.nick + ' has not accepted your group invitation yet.', 'var(--amber)');
+    } else {
+      btn.textContent = m.nick;
+      btn.onclick = () => {
+        if(m.isSelf){
+          closeMemberViewer();
+          _setAllChips(chips, selfEmail);
+        } else {
+          openMemberViewer(m.email, m.nick);
+          _setAllChips(chips, m.email);
+        }
+      };
+    }
     if(m.isSelf) btn.classList.add('pill-active');
     chips.appendChild(btn);
   });
@@ -6575,12 +6650,20 @@ function _setAllChips(container, activeEmail) {
 
 async function _loadGroupMemberEmails(adminEmail) {
   _myGroupMemberEmails = [];
+  _myGroupPendingEmails = [];
   if (!_fbReady || !_db) return;
   try {
     const groups = await _loadMyGroups(adminEmail);
     groups.forEach(g => {
+      // Accepted members
       (g.members || []).forEach(m => {
         if (m.email) _myGroupMemberEmails.push(m.email.toLowerCase());
+      });
+      // Pending invitees (sent invite, not yet accepted)
+      (g.pendingRequests || []).forEach(r => {
+        if (r.email && !_myGroupMemberEmails.includes(r.email.toLowerCase())) {
+          _myGroupPendingEmails.push(r.email.toLowerCase());
+        }
       });
     });
     console.log('[Role] Admin group members:', _myGroupMemberEmails);
