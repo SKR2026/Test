@@ -4648,7 +4648,7 @@ async function sendViaMsGraph(toEmail, subject, htmlBody, ccEmails=[]){
 }
 
 // ── EmailJS send ───────────────────────────────────────────────────────
-async function sendViaEmailJS(toEmail, subject, htmlBody, task){
+async function sendViaEmailJS(toEmail, subject, htmlBody, task={}){
   const c = getEmailConfig();
   if(typeof emailjs === 'undefined') throw new Error('EmailJS library not loaded');
   emailjs.init({ publicKey: c.ejsKey });
@@ -4661,7 +4661,7 @@ async function sendViaEmailJS(toEmail, subject, htmlBody, task){
     subject:    subject,
     message_html: htmlBody,
     task_title: task.title||'',
-    task_due:   fmt(task.due)||'',
+    task_due:   (typeof fmt==='function' ? fmt(task.due) : (task.due||''))||'',
     task_priority: task.priority||'',
     task_status: task.status||'',
     task_desc:  task.desc||'',
@@ -4688,7 +4688,12 @@ async function sendTaskEmail(task, reason='assigned', extra={}){
     const ccArr = (task.cc||'').split(',').map(e=>e.trim()).filter(e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
     await sendViaMsGraph(task.assignee, subject, htmlBody, ccArr);
   } else if(transport === 'emailjs'){
-    await sendViaEmailJS(task.assignee, subject, htmlBody, task);
+    try {
+      await sendViaEmailJS(task.assignee, subject, htmlBody, task);
+    } catch(ejsErr) {
+      console.error('[EmailJS send error]', ejsErr);
+      throw ejsErr; // re-throw so notifyAssignee can show the toast
+    }
   }
   return true;
 }
@@ -5776,7 +5781,7 @@ function _activateRoleSession(role) {
     _setSettingsNavVisible(false);
     _injectRoleNavItems('admin');
     // Load group members so task scoping works + load appUsers for assignee dropdown
-    _loadGroupMemberEmails(currentSession.email).then(() => { updateOverdueBadge(); });
+    _loadGroupMemberEmails(currentSession.email).then(() => { refreshOverdueBadge(); });
     _ensureAppUsersLoaded();
     toast('Welcome, ' + getSessionNick() + '! (Admin) 👋');
     showPanel('dashboard');
@@ -7880,6 +7885,7 @@ function renderMyTasks(){
     if(dashMonthFilter!=='All' && (!t.due||t.due.slice(5,7)!==dashMonthFilter)) return false;
     return true;
   });
+  const todo=myT.filter(t=>t.status==='To Do');
   const inprog=myT.filter(t=>t.status==='In Progress');
   const review=myT.filter(t=>t.status==='Review');
   const done=myT.filter(t=>t.status==='Done');
