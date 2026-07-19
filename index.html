@@ -1852,8 +1852,9 @@ function showPanel(name){
     if(!document.getElementById('member-viewer') || document.getElementById('member-viewer').style.display === 'none'){
       const myEmail = _getMyEmail();
       document.querySelectorAll('.member-chip').forEach(c => {
-        const isActive = myEmail && c.dataset.email === myEmail;
-        c.classList.toggle('active', isActive || c.classList.contains('self'));
+        const isActive = (myEmail && c.dataset.email === myEmail) || c.classList.contains('self');
+        c.classList.toggle('active', isActive);
+        if(c._applyActive) c._applyActive(isActive);
       });
     }
   }
@@ -2419,13 +2420,32 @@ function renderDashboard(){
 
   /* ── Global Member Chips ── */
   .member-chip {
-    display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;
-    font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--border2);
-    background:var(--card);color:var(--text2);transition:all .15s;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:50px;
+    font-size:12px;font-weight:700;cursor:pointer;
+    border:2px solid var(--chip-col, var(--border2));
+    background:var(--card);
+    color:var(--chip-col, var(--text2));
+    transition:all .18s;white-space:nowrap;letter-spacing:.2px;
+    box-shadow:none;
   }
-  .member-chip:hover { border-color:var(--accent);color:var(--accent);background:rgba(91,141,238,.08); }
-  .member-chip.self  { border-color:var(--purple);color:var(--purple);background:rgba(179,102,255,.1); }
-  .member-chip.active{ border-color:var(--accent);color:#fff;background:var(--accent);box-shadow:0 0 12px rgba(91,141,238,.4); }
+  .member-chip:hover {
+    background:var(--chip-col, var(--accent));
+    color:#fff;
+    border-color:var(--chip-col, var(--accent));
+    transform:translateY(-1px);
+    box-shadow:0 4px 12px color-mix(in srgb, var(--chip-col, var(--accent)) 40%, transparent);
+  }
+  .member-chip.self {
+    border-color:#8b5cf6;color:#8b5cf6;background:rgba(139,92,246,.08);
+    --chip-col:#8b5cf6;
+  }
+  .member-chip.active {
+    background:var(--chip-col, var(--accent));
+    color:#fff !important;
+    border-color:var(--chip-col, var(--accent));
+    box-shadow:0 4px 14px color-mix(in srgb, var(--chip-col, var(--accent)) 45%, transparent);
+    transform:translateY(-1px);
+  }
 
   /* ── Member Viewer Sub-tabs ── */
   .mv-tab {
@@ -5961,9 +5981,11 @@ function openMemberViewer(email, nick) {
   const viewer = el('member-viewer');
   if(viewer) { viewer.style.display = 'flex'; }
 
-  // Highlight active chip
+  // Highlight active chip with colour
   document.querySelectorAll('.member-chip').forEach(c => {
-    c.classList.toggle('active', c.dataset.email === _mvEmail);
+    const isActive = c.dataset.email === _mvEmail;
+    c.classList.toggle('active', isActive);
+    if(c._applyActive) c._applyActive(isActive);
   });
 
   // Default to dashboard tab
@@ -5976,10 +5998,11 @@ function closeMemberViewer() {
   if(viewer) viewer.style.display = 'none';
   _mvEmail = null;
   _mvNick  = null;
-  // Deselect all chips, re-highlight self chip
+  // Re-highlight self chip only
   document.querySelectorAll('.member-chip').forEach(c => {
-    c.classList.remove('active');
-    if(c.classList.contains('self')) c.classList.add('active');
+    const isSelf = c.classList.contains('self');
+    c.classList.toggle('active', isSelf);
+    if(c._applyActive) c._applyActive(isSelf);
   });
 }
 
@@ -6272,6 +6295,20 @@ function _renderMvMyTasks(c, myTasks) {
   const review  = myTasks.filter(t=>t.status==='Review');
   const done    = myTasks.filter(t=>t.status==='Done');
   const overdue = myTasks.filter(isOverdue);
+  const rate    = myTasks.length ? Math.round(done.length/myTasks.length*100) : 0;
+
+  // 8 stat cards — same as main My Tasks panel
+  const statCards = [
+    {label:'Total Tasks',     val:myTasks.length,  col:'var(--accent)',  icon:'📋'},
+    {label:'My Tasks',        val:myTasks.length,  col:'var(--purple)',  icon:'👤',
+     sub:(overdue.length?'⚠ '+overdue.length+' overdue · ':'')+(myTasks.length-done.length)+' open'},
+    {label:'To Do',           val:todo.length,     col:'var(--text3)',   icon:'📌'},
+    {label:'In Progress',     val:inprog.length,   col:'var(--cyan)',    icon:'⚡'},
+    {label:'In Review',       val:review.length,   col:'var(--amber)',   icon:'👁'},
+    {label:'Completed',       val:done.length,     col:'var(--green)',   icon:'✅'},
+    {label:'Overdue',         val:overdue.length,  col:'var(--red)',     icon:'🚨'},
+    {label:'Completion Rate', val:rate+'%',        col:'var(--cyan)',    icon:'📈'},
+  ];
 
   function taskRow(t) {
     const od = isOverdue(t);
@@ -6292,7 +6329,23 @@ function _renderMvMyTasks(c, myTasks) {
   ];
 
   c.innerHTML = `
-    <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:16px">✅ ${esc(_mvNick)}'s Tasks (${myTasks.length})</div>
+    <div class="dash-header-row fade-in" style="margin-bottom:18px;">
+      <div class="dash-header-left">
+        <div class="panel-title">✅ ${esc(_mvNick)}'s Tasks</div>
+        <div class="panel-sub">${myTasks.length} task(s) assigned · ${rate}% completion rate</div>
+      </div>
+    </div>
+
+    <div class="stats-grid fade-in" style="margin-bottom:22px;">
+      ${statCards.map(card=>`
+      <div class="stat-card" style="--c:${card.col}">
+        <div class="stat-icon">${card.icon}</div>
+        <div class="stat-value">${card.val}</div>
+        <div class="stat-label">${card.label}</div>
+        ${card.sub?`<div style="font-size:10px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${card.sub}</div>`:''}
+      </div>`).join('')}
+    </div>
+
     ${sections.map(s=>s.tasks.length?`
     <div style="margin-bottom:20px">
       <div style="font-size:12px;font-weight:700;color:${s.col};text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding:0 2px">${s.label} · ${s.tasks.length}</div>
@@ -6509,35 +6562,68 @@ function buildGlobalMemberBar() {
 
   if(members.length < 1) { bar.style.display = 'none'; return; }
 
+  // Colour palette — one distinct colour per member slot
+  const CHIP_COLORS = [
+    '#8b5cf6', // self — always purple
+    '#5b8dee', // member 1 — blue
+    '#10b981', // member 2 — green
+    '#f59e0b', // member 3 — amber
+    '#06b6d4', // member 4 — cyan
+    '#f472b6', // member 5 — pink
+    '#ef4444', // member 6 — red
+    '#f97316', // member 7 — orange
+  ];
+
   // Build chips
   chips.innerHTML = '';
-  members.forEach(m => {
+  members.forEach((m, idx) => {
+    const col = CHIP_COLORS[idx % CHIP_COLORS.length];
     const btn = document.createElement('button');
     btn.className = 'member-chip' + (m.isSelf ? ' self active' : '');
     btn.dataset.email = m.email;
+    btn.dataset.color = col;
     btn.textContent = m.nick;
     btn.title = m.email;
+    btn.style.setProperty('--chip-col', col);
+    // Apply active (filled) style inline so it works on all tabs
+    const applyActive = (active) => {
+      if(active){
+        btn.style.background = col;
+        btn.style.color = '#fff';
+        btn.style.borderColor = col;
+        btn.style.boxShadow = `0 4px 14px ${col}70`;
+        btn.style.transform = 'translateY(-1px)';
+      } else {
+        btn.style.background = '';
+        btn.style.color = col;
+        btn.style.borderColor = col;
+        btn.style.boxShadow = '';
+        btn.style.transform = '';
+      }
+    };
     btn.onclick = () => {
       if(m.isSelf) {
         closeMemberViewer();
-        // Re-highlight self
-        document.querySelectorAll('.member-chip').forEach(c => {
-          c.classList.toggle('active', c.dataset.email === selfEmail);
+        chips.querySelectorAll('.member-chip').forEach(c => {
+          const isMe = c.dataset.email === selfEmail;
+          c.classList.toggle('active', isMe);
+          c._applyActive && c._applyActive(isMe);
         });
       } else {
         openMemberViewer(m.email, m.nick);
+        chips.querySelectorAll('.member-chip').forEach(c => {
+          const isThis = c.dataset.email === m.email;
+          c.classList.toggle('active', isThis);
+          c._applyActive && c._applyActive(isThis);
+        });
       }
     };
+    btn._applyActive = applyActive;
+    applyActive(m.isSelf); // self starts active
     chips.appendChild(btn);
   });
 
   bar.style.display = 'flex';
-  // Apply active state on self chip
-  const myE = _getMyEmail();
-  chips.querySelectorAll('.member-chip').forEach(c => {
-    const isSelf = myE && c.dataset.email === myE;
-    c.classList.toggle('active', isSelf);
-  });
 }
 
 async function _loadGroupMemberEmails(adminEmail) {
