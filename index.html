@@ -795,23 +795,27 @@
     <!-- ── Member Viewer Panel — full member dashboard overlay ── -->
     <div id="member-viewer" style="display:none;position:fixed;inset:0;z-index:500;background:var(--bg);overflow:hidden;flex-direction:column;">
       <!-- Member viewer topbar -->
-      <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px;flex-shrink:0;">
-        <button onclick="closeMemberViewer()" style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;">← Back</button>
-        <div style="display:flex;align-items:center;gap:10px;flex:1;">
-          <div id="mv-avatar" style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;flex-shrink:0;">?</div>
+      <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;flex-shrink:0;flex-wrap:wrap;">
+        <button onclick="closeMemberViewer()" style="background:transparent;border:2px solid var(--border2);border-radius:50px;padding:7px 18px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:6px;transition:all .15s;letter-spacing:.2px;"
+          onmouseenter="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+          onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
+          ← Back
+        </button>
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
+          <div id="mv-avatar" style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;flex-shrink:0;box-shadow:0 4px 12px rgba(91,141,238,.35);">?</div>
           <div>
-            <div id="mv-name" style="font-weight:800;font-size:16px;color:var(--text);">Member</div>
-            <div id="mv-email" style="font-size:11px;color:var(--text3);">—</div>
+            <div id="mv-name" style="font-weight:800;font-size:17px;color:var(--text);letter-spacing:-.2px;">Member</div>
+            <div id="mv-email" style="font-size:11px;color:var(--text3);margin-top:1px;">—</div>
           </div>
         </div>
         <!-- Member sub-tabs -->
-        <div style="display:flex;gap:4px;flex-wrap:wrap;" id="mv-tabs">
-          <button class="mv-tab active" data-tab="mv-dashboard" onclick="switchMemberTab('mv-dashboard')">📊 Dashboard</button>
-          <button class="mv-tab" data-tab="mv-mytasks"   onclick="switchMemberTab('mv-mytasks')">✅ My Tasks</button>
-          <button class="mv-tab" data-tab="mv-alltasks"  onclick="switchMemberTab('mv-alltasks')">📋 All Tasks</button>
-          <button class="mv-tab" data-tab="mv-kanban"    onclick="switchMemberTab('mv-kanban')">🗂 Kanban</button>
-          <button class="mv-tab" data-tab="mv-gantt"     onclick="switchMemberTab('mv-gantt')">📅 Gantt</button>
-          <button class="mv-tab" data-tab="mv-team"      onclick="switchMemberTab('mv-team')">👥 Team</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;" id="mv-tabs">
+          <button class="mv-tab active" data-tab="mv-dashboard" onclick="switchMemberTab('mv-dashboard')" data-color="#5b8dee">📊 Dashboard</button>
+          <button class="mv-tab" data-tab="mv-mytasks"   onclick="switchMemberTab('mv-mytasks')"  data-color="#10b981">✅ My Tasks</button>
+          <button class="mv-tab" data-tab="mv-alltasks"  onclick="switchMemberTab('mv-alltasks')" data-color="#8b5cf6">📋 All Tasks</button>
+          <button class="mv-tab" data-tab="mv-kanban"    onclick="switchMemberTab('mv-kanban')"   data-color="#f59e0b">🗂 Kanban</button>
+          <button class="mv-tab" data-tab="mv-gantt"     onclick="switchMemberTab('mv-gantt')"    data-color="#06b6d4">📅 Gantt</button>
+          <button class="mv-tab" data-tab="mv-team"      onclick="switchMemberTab('mv-team')"     data-color="#f472b6">👥 Team</button>
         </div>
       </div>
       <!-- Member viewer content -->
@@ -2407,12 +2411,29 @@ function renderDashboard(){
 
   /* ── Member Viewer Sub-tabs ── */
   .mv-tab {
-    padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
-    border:1.5px solid var(--border2);background:var(--card);color:var(--text2);
-    font-family:var(--font-body);transition:all .15s;white-space:nowrap;
+    padding:7px 16px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;
+    border:2px solid transparent;background:var(--card2);color:var(--text2);
+    font-family:var(--font-body);transition:all .18s;white-space:nowrap;
+    position:relative;overflow:hidden;letter-spacing:.2px;
   }
-  .mv-tab:hover  { border-color:var(--accent);color:var(--accent); }
-  .mv-tab.active { background:var(--accent);border-color:var(--accent);color:#fff; }
+  .mv-tab::before {
+    content:'';position:absolute;inset:0;opacity:0;transition:opacity .18s;
+    background:linear-gradient(135deg,var(--mv-c,#5b8dee),var(--mv-c2,#3d6dd4));
+  }
+  .mv-tab:hover {
+    border-color:var(--mv-c,var(--accent));
+    color:var(--mv-c,var(--accent));
+    background:var(--card);
+    transform:translateY(-1px);
+    box-shadow:0 4px 12px rgba(0,0,0,.15);
+  }
+  .mv-tab.active {
+    background:var(--mv-c,var(--accent));
+    border-color:var(--mv-c,var(--accent));
+    color:#fff;
+    box-shadow:0 4px 16px rgba(0,0,0,.2);
+    transform:translateY(-1px);
+  }
 
   /* ── Member viewer slide-in ── */
   #member-viewer { animation: mvSlideIn .2s ease; }
@@ -5915,6 +5936,7 @@ function openMemberViewer(email, nick) {
 
   // Default to dashboard tab
   switchMemberTab('mv-dashboard');
+  setTimeout(()=>_applyMvTabColours('mv-dashboard'),0);
 }
 
 function closeMemberViewer() {
@@ -5931,11 +5953,49 @@ function closeMemberViewer() {
 
 function switchMemberTab(tab) {
   _mvTab = tab;
-  // Update tab buttons
+  // Update tab buttons — apply each tab's own colour when active
   document.querySelectorAll('.mv-tab').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tab);
+    const isActive = b.dataset.tab === tab;
+    const col = b.dataset.color || 'var(--accent)';
+    b.classList.toggle('active', isActive);
+    // Set CSS custom property so the active colour uses this tab's colour
+    b.style.setProperty('--mv-c', col);
+    if(isActive){
+      b.style.background = col;
+      b.style.borderColor = col;
+      b.style.color = '#fff';
+      b.style.boxShadow = `0 4px 16px ${col}55`;
+    } else {
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.style.color = '';
+      b.style.boxShadow = '';
+    }
   });
   renderMemberViewerContent();
+}
+
+// Apply colours on initial open too
+function _applyMvTabColours(activeTab) {
+  document.querySelectorAll('.mv-tab').forEach(b => {
+    const col = b.dataset.color || 'var(--accent)';
+    const isActive = b.dataset.tab === activeTab;
+    b.style.setProperty('--mv-c', col);
+    if(isActive){
+      b.style.background = col;
+      b.style.borderColor = col;
+      b.style.color = '#fff';
+      b.style.boxShadow = `0 4px 16px ${col}55`;
+    } else {
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.style.color = '';
+      b.style.boxShadow = '';
+      // subtle tinted border on hover hint
+      b.onmouseenter = () => { b.style.borderColor = col; b.style.color = col; };
+      b.onmouseleave = () => { b.style.borderColor = ''; b.style.color = ''; };
+    }
+  });
 }
 
 function renderMemberViewerContent() {
