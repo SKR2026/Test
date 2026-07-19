@@ -6642,9 +6642,11 @@ function _injectRoleNavItems(role) {
   if (!container) return;
   if (role === 'superadmin') {
     container.innerHTML = `
-      <div class="nav-section">Account</div>
+      <div class="nav-section">Super Admin</div>
       <div class="nav-item" onclick="showSendRegistrationPanel()"><span class="nav-icon">📨</span><span>Send Registration</span></div>
+      <div class="nav-item" onclick="showManageAdminsPanel()"><span class="nav-icon">🛡️</span><span>Manage Admins</span></div>
       <div class="nav-item" onclick="showGroupManagementPanel()"><span class="nav-icon">👥</span><span>My Groups</span></div>
+      <div class="nav-item" onclick="showChangeSuperAdminEmail()"><span class="nav-icon">✉️</span><span>Change My Email</span></div>
       <div class="nav-item" onclick="showChangePasswordPanel()"><span class="nav-icon">🔑</span><span>Change Password</span></div>`;
   } else if (role === 'admin') {
     container.innerHTML = `
@@ -6755,8 +6757,9 @@ function showSendRegistrationPanel() {
       <div class="form-group">
         <label class="form-label">Role</label>
         <select id="reg-role" class="form-select">
-          ${adminAuthenticated && !currentSession ? '<option value="admin">Admin</option>' : ''}
-          <option value="user">User</option>
+          ${adminAuthenticated && !currentSession
+            ? '<option value="admin">Admin</option><option value="user">User</option>'
+            : '<option value="user">User</option>'}
         </select>
       </div>
       <div class="form-group">
@@ -6967,10 +6970,191 @@ async function _saveMyGroups(adminEmail, groups) {
   await _db.collection('settings').doc(_grpDocKey(adminEmail)).set({ groups, owner: adminEmail }, { merge: true });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SUPERADMIN — Manage Admins panel
+// ═══════════════════════════════════════════════════════════════════════
+async function showManageAdminsPanel() {
+  if(!isSuperAdmin()) { toast('Super Admin only.','var(--red)'); return; }
+  const c = document.getElementById('content');
+  c.innerHTML = `<div class="panel-title fade-in">🛡️ Manage Admins</div>
+    <div class="panel-sub">Create, view and manage admin accounts. Only Super Admin can do this.</div>
+    <div style="max-width:600px;display:flex;flex-direction:column;gap:14px" class="fade-in">
+      <!-- Create new admin -->
+      <div class="card">
+        <div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:16px">➕ Create New Admin Account</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input id="ma-email" class="form-input" type="email" placeholder="admin@company.com"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nickname</label>
+            <input id="ma-nick" class="form-input" placeholder="e.g. Rahul"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temporary Password <span style="color:var(--text3);font-size:11px">(user must change on first login)</span></label>
+          <input id="ma-pwd" class="form-input" type="text" placeholder="e.g. Admin@2025"/>
+        </div>
+        <div id="ma-status" style="font-size:12px;min-height:16px;margin-bottom:10px"></div>
+        <button class="btn btn-primary" onclick="_createAdminAccount()">🛡️ Create Admin & Send Registration Email</button>
+      </div>
+      <!-- Existing admins list -->
+      <div class="card">
+        <div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:14px">👥 Existing Admin Accounts</div>
+        <div id="ma-list"><div style="color:var(--text3);font-size:13px">Loading...</div></div>
+      </div>
+    </div>`;
+  // Load admin list
+  _loadAdminList();
+}
+
+async function _createAdminAccount() {
+  const email  = (document.getElementById('ma-email')?.value||'').trim().toLowerCase();
+  const nick   = (document.getElementById('ma-nick')?.value||'').trim();
+  const tempPw = (document.getElementById('ma-pwd')?.value||'').trim();
+  const st     = document.getElementById('ma-status');
+  if(!email){ st.textContent='❌ Enter email.'; st.style.color='var(--red)'; return; }
+  if(!tempPw){ st.textContent='❌ Set a temporary password.'; st.style.color='var(--red)'; return; }
+  st.textContent='⏳ Creating admin account...'; st.style.color='var(--text3)';
+  try {
+    const existing = await _db.collection('appUsers').doc(email).get();
+    if(existing.exists && existing.data().status !== 'disabled'){
+      st.textContent='❌ An account with this email already exists.'; st.style.color='var(--red)'; return;
+    }
+    const hashed = await _hashPw(tempPw, email);
+    await _db.collection('appUsers').doc(email).set({
+      email, nickname: nick, role: 'admin',
+      passwordHash: hashed, mustChangePassword: true,
+      status: 'active', createdBy: 'superadmin',
+      createdAt: new Date().toISOString(), groupMemberships: []
+    });
+    st.textContent='⏳ Account created! Sending registration email...'; st.style.color='var(--text3)';
+    const sent = await _sendRegistrationEmail(email, nick, 'admin', tempPw);
+    if(sent === true){
+      st.innerHTML='✅ Admin account created & email sent to <strong>'+esc(email)+'</strong>!';
+      st.style.color='var(--green)';
+      toast('✅ Admin account created for '+(nick||email)+'!','var(--green)');
+    } else {
+      st.innerHTML='✅ Admin account created. Share login manually — Temp pwd: <strong>'+esc(tempPw)+'</strong>';
+      st.style.color='var(--amber)';
+    }
+    _loadAdminList();
+    if(document.getElementById('ma-email')) document.getElementById('ma-email').value='';
+    if(document.getElementById('ma-nick'))  document.getElementById('ma-nick').value='';
+    if(document.getElementById('ma-pwd'))   document.getElementById('ma-pwd').value='';
+  } catch(e){ st.textContent='❌ '+e.message; st.style.color='var(--red)'; }
+}
+
+async function _loadAdminList() {
+  const listEl = document.getElementById('ma-list');
+  if(!listEl || !_fbReady || !_db) return;
+  try {
+    const snap = await _db.collection('appUsers').where('role','==','admin').get();
+    if(snap.empty){ listEl.innerHTML='<div style="color:var(--text3);font-size:13px">No admin accounts yet.</div>'; return; }
+    const rows = snap.docs.map(d => {
+      const u = d.data();
+      const statusBadge = u.status==='disabled'
+        ? '<span style="font-size:10px;font-weight:700;color:var(--red);background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);border-radius:4px;padding:1px 7px;">Disabled</span>'
+        : '<span style="font-size:10px;font-weight:700;color:var(--green);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.22);border-radius:4px;padding:1px 7px;">Active</span>';
+      const mustChange = u.mustChangePassword
+        ? '<span style="font-size:10px;color:var(--amber);margin-left:6px">⚠ Password not changed</span>' : '';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0">${(u.nickname||u.email)[0].toUpperCase()}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:var(--text)">${esc(u.nickname||u.email)} ${statusBadge}${mustChange}</div>
+          <div style="font-size:11px;color:var(--text3)">${esc(u.email)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${u.status!=='disabled'
+            ? `<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="_toggleAdminStatus('${esc(u.email)}','disable')">Disable</button>`
+            : `<button class="btn btn-success btn-sm" style="font-size:11px" onclick="_toggleAdminStatus('${esc(u.email)}','enable')">Enable</button>`}
+          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_resetAdminPassword('${esc(u.email)}')">🔑 Reset Pwd</button>
+        </div>
+      </div>`;
+    }).join('');
+    listEl.innerHTML = rows;
+  } catch(e){ listEl.innerHTML='<div style="color:var(--red);font-size:13px">Error: '+esc(e.message)+'</div>'; }
+}
+
+async function _toggleAdminStatus(email, action) {
+  if(!confirm((action==='disable'?'Disable':'Enable')+' admin account for '+email+'?')) return;
+  try {
+    await _db.collection('appUsers').doc(email).set({status: action==='disable'?'disabled':'active'},{merge:true});
+    toast((action==='disable'?'Disabled':'Enabled')+' admin: '+email,'var(--green)');
+    _loadAdminList();
+  } catch(e){ toast('Error: '+e.message,'var(--red)'); }
+}
+
+async function _resetAdminPassword(email) {
+  const newPw = prompt('Enter new temporary password for '+email+':');
+  if(!newPw || newPw.length < 6){ toast('Password must be at least 6 characters.','var(--amber)'); return; }
+  try {
+    const hashed = await _hashPw(newPw, email);
+    await _db.collection('appUsers').doc(email).set({passwordHash:hashed, mustChangePassword:true},{merge:true});
+    toast('✅ Password reset for '+email+'. Share new password: '+newPw,'var(--green)');
+  } catch(e){ toast('Error: '+e.message,'var(--red)'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SUPERADMIN — Change own email address
+// ═══════════════════════════════════════════════════════════════════════
+function showChangeSuperAdminEmail() {
+  if(!isSuperAdmin()) { toast('Super Admin only.','var(--red)'); return; }
+  const currentEmail = localStorage.getItem('admin_notify_email') || '';
+  const c = document.getElementById('content');
+  c.innerHTML = `
+  <div class="panel-title fade-in">✉️ Change Super Admin Email</div>
+  <div class="panel-sub">Your email is used for My Tasks identity, email notifications, and display.</div>
+  <div style="max-width:440px;display:flex;flex-direction:column;gap:14px" class="fade-in">
+    <div class="card">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">
+        Current email: <strong style="color:var(--accent)">${esc(currentEmail||'Not set')}</strong>
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Email Address</label>
+        <input id="sa-new-email" class="form-input" type="email" placeholder="your@email.com" value="${esc(currentEmail)}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Name <span style="color:var(--text3);font-size:11px">(optional)</span></label>
+        <input id="sa-display-name" class="form-input" placeholder="e.g. Super Admin" value="${esc(localStorage.getItem('self_name')||'')}"/>
+      </div>
+      <div id="sa-email-status" style="font-size:12px;min-height:16px;margin-bottom:10px"></div>
+      <button class="btn btn-primary" onclick="_saveSuperAdminEmail()">💾 Save Email</button>
+    </div>
+    <div class="card" style="background:rgba(91,141,238,.05);border-color:rgba(91,141,238,.2)">
+      <div style="font-size:12px;color:var(--text2);line-height:1.7">
+        <strong style="color:var(--accent)">What this email is used for:</strong><br/>
+        • <strong>My Tasks</strong> — shows tasks assigned to this email<br/>
+        • <strong>Email notifications</strong> — admin notify email for task alerts<br/>
+        • <strong>Display</strong> — shown in topbar and member bar<br/>
+        • You can also set this in <strong>Settings → Email Integration → Admin Notify Email</strong>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _saveSuperAdminEmail() {
+  const email = (document.getElementById('sa-new-email')?.value||'').trim().toLowerCase();
+  const name  = (document.getElementById('sa-display-name')?.value||'').trim();
+  const st    = document.getElementById('sa-email-status');
+  if(!email || !email.includes('@')){ st.textContent='❌ Enter a valid email.'; st.style.color='var(--red)'; return; }
+  localStorage.setItem('admin_notify_email', email);
+  if(name) localStorage.setItem('self_name', name);
+  st.textContent='✅ Email saved!'; st.style.color='var(--green)';
+  toast('✅ Super Admin email updated to '+email,'var(--green)');
+  // Update topbar display
+  _renderTopbarUserBadge();
+  // Rebuild member bar so self chip shows new nick
+  buildGlobalMemberBar();
+  setTimeout(()=>{ st.textContent=''; }, 3000);
+}
+
 function showGroupManagementPanel() {
   const isSA = adminAuthenticated && !currentSession;
   if (!isSA && (!currentSession || currentSession.role !== 'admin')) {
-    toast('Only admins and Super Admin can manage groups.', 'var(--red)'); return;
+    toast('Only Super Admin and Admin accounts can manage groups.', 'var(--red)'); return;
   }
   const adminEmail = isSA ? (localStorage.getItem('admin_notify_email') || 'superadmin') : currentSession.email;
   const adminNick  = isSA ? 'Super Admin' : (currentSession.nickname || currentSession.email);
