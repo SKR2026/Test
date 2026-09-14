@@ -6903,68 +6903,101 @@ function abbrevDocHTML(){
   const myPids=(role==='plant-admin')?getMyPlantIds():null;
   let emps=[...S.employees].filter(e=>!e.isVacant);
   if(myPids) emps=emps.filter(e=>myPids.includes(e.plantId));
+  // Level 6 and above only (level stored as number or string)
+  emps=emps.filter(e=>{
+    const lv=parseInt(e.level||0,10);
+    return lv>=6;
+  });
   emps=emps.filter(e=>e.name).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
 
-  // Export to XLSX
-  const exportAbbrXLSX=()=>{
-    const rows=[['S.No.','Name','Dept','Abbr.','Mobile No.','Ext','Mail ID']];
-    emps.forEach((e,i)=>{
-      rows.push([i+1, e.name||'—', e.dept||'—', e.abbrev||'—', e.contact||'—', e.ext||'—', e.email||'—']);
-    });
+  const noAbbrev=emps.filter(e=>!e.abbrev).length;
+
+  // Shared data for inline export buttons
+  const empData=JSON.stringify(emps.map(e=>({
+    name:e.name,designation:e.designation||'',level:e.level||'',
+    dept:e.dept,abbrev:e.abbrev,contact:e.contact,ext:e.ext,email:e.email
+  })));
+
+  // Export XLSX (inline onclick)
+  const xlsxOnClick=`(function(){
+    const emps=${empData};
+    const rows=[['S.No.','Name','Designation','Level','Department','Abbreviation','Mobile No.','Ext.','Email']];
+    emps.forEach((e,i)=>{ rows.push([i+1,e.name||'—',e.designation||'—',e.level||'—',e.dept||'—',e.abbrev||'—',e.contact||'—',e.ext||'—',e.email||'—']); });
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.aoa_to_sheet(rows);
-    // Column widths
-    ws['!cols']=[{wch:6},{wch:28},{wch:20},{wch:10},{wch:18},{wch:8},{wch:30}];
+    ws['!cols']=[{wch:5},{wch:26},{wch:22},{wch:7},{wch:18},{wch:12},{wch:15},{wch:6},{wch:28}];
     XLSX.utils.book_append_sheet(wb,ws,'Abbreviation Document');
     XLSX.writeFile(wb,'Abbreviation_Document.xlsx');
-  };
+  })()`;
 
-  const noAbbrev=emps.filter(e=>!e.abbrev).length;
+  // Export PDF (inline onclick using jsPDF + html2canvas)
+  const pdfOnClick=`(function(){
+    const el=document.getElementById('abbrev-doc-table-wrap');
+    if(!el){alert('Table not found');return;}
+    html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#fff'}).then(canvas=>{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+      const pw=pdf.internal.pageSize.getWidth()-16;
+      const ph=pdf.internal.pageSize.getHeight()-20;
+      const imgW=canvas.width, imgH=canvas.height;
+      const ratio=imgW/imgH;
+      let w=pw, h=pw/ratio;
+      if(h>ph){h=ph;w=ph*ratio;}
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica','bold');
+      pdf.text('Abbreviation Document — Level 6 & Above',8,10);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica','normal');
+      pdf.text(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),pdf.internal.pageSize.getWidth()-8,10,{align:'right'});
+      pdf.addImage(canvas.toDataURL('image/png'),8,14,w,h);
+      pdf.save('Abbreviation_Document.pdf');
+    });
+  })()`;
+
   return `<div>
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
     <div>
-      <div style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:2px">📋 Abbreviation Document</div>
+      <div style="font-size:16px;font-weight:800;color:var(--navy);margin-bottom:2px">📋 Abbreviation Document <span style="font-size:12px;font-weight:600;color:var(--gold);background:rgba(245,166,35,.12);border-radius:20px;padding:2px 10px;vertical-align:middle">Level 6 & Above</span></div>
       <div style="font-size:12px;color:var(--g400)">${emps.length} employee${emps.length!==1?'s':''} listed${myPids?` across ${myPids.length} plant${myPids.length!==1?'s':''}`:''}${noAbbrev>0?` · <span style="color:#B7791F;font-weight:700">${noAbbrev} missing abbreviation</span>`:' · <span style="color:var(--ok);font-weight:700">All abbreviations set ✓</span>'}</div>
     </div>
-    <button class="btn bs" id="abbr-xlsx-btn" onclick="(function(){
-      const emps=${JSON.stringify(emps.map(e=>({name:e.name,dept:e.dept,abbrev:e.abbrev,contact:e.contact,ext:e.ext,email:e.email})))};
-      const rows=[['S.No.','Name','Dept','Abbr.','Mobile No.','Ext','Mail ID']];
-      emps.forEach((e,i)=>{ rows.push([i+1,e.name||'—',e.dept||'—',e.abbrev||'—',e.contact||'—',e.ext||'—',e.email||'—']); });
-      const wb=XLSX.utils.book_new();
-      const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:6},{wch:28},{wch:20},{wch:10},{wch:18},{wch:8},{wch:30}];
-      XLSX.utils.book_append_sheet(wb,ws,'Abbreviation Document');
-      XLSX.writeFile(wb,'Abbreviation_Document.xlsx');
-    })()">⬇ Export XLSX</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bs bsm" onclick="${xlsxOnClick.replace(/"/g,"&quot;")}">⬇ Excel</button>
+      <button class="btn bp bsm" onclick="${pdfOnClick.replace(/"/g,"&quot;")}">⬇ PDF</button>
+    </div>
   </div>
-  <div class="card">
+  <div class="card" id="abbrev-doc-table-wrap">
     <div class="tw">
-      <table>
+      <table class="table-compact">
         <thead>
           <tr>
-            <th style="width:46px">S.No.</th>
-            <th>Name</th>
-            <th>Dept</th>
-            <th style="width:80px">Abbr.</th>
-            <th>Mobile No.</th>
-            <th style="width:70px">Ext</th>
-            <th>Mail ID</th>
+            <th style="width:38px;text-align:center">S.No.</th>
+            <th style="min-width:140px">Name</th>
+            <th style="min-width:130px">Designation</th>
+            <th style="width:52px;text-align:center">Level</th>
+            <th style="min-width:110px">Department</th>
+            <th style="width:72px;text-align:center">Abbreviation</th>
+            <th style="min-width:110px">Mobile No.</th>
+            <th style="width:52px;text-align:center">Ext.</th>
+            <th style="min-width:160px">Email</th>
           </tr>
         </thead>
         <tbody>
-          ${emps.length===0?`<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--g400)">No employees found</td></tr>`
+          ${emps.length===0
+            ?`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--g400)">No employees at Level 6 or above found</td></tr>`
             :emps.map((e,i)=>`<tr>
-              <td style="color:var(--g400);font-size:12px;text-align:center">${i+1}</td>
-              <td><strong style="font-size:13px">${esc(e.name||'—')}</strong>${e.empCode?`<div style="font-size:10px;color:var(--g400)">${esc(e.empCode)}</div>`:''}</td>
-              <td><span style="font-size:12px;color:var(--g600)">${esc(e.dept||'—')}</span></td>
+              <td style="color:var(--g400);font-size:11px;text-align:center">${i+1}</td>
+              <td><strong style="font-size:12px">${esc(e.name||'—')}</strong>${e.empCode?`<div style="font-size:10px;color:var(--g400)">${esc(e.empCode)}</div>`:''}</td>
+              <td style="font-size:12px;color:var(--g600)">${esc(e.designation||'—')}</td>
+              <td style="text-align:center"><span style="display:inline-block;background:rgba(30,64,128,.1);color:var(--steel);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700">${esc(String(e.level||'—'))}</span></td>
+              <td style="font-size:12px;color:var(--g600)">${esc(e.dept||'—')}</td>
               <td style="text-align:center">
                 ${e.abbrev
-                  ?`<span style="display:inline-block;background:var(--navy);color:#fff;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:800;letter-spacing:.05em">${esc(e.abbrev)}</span>`
+                  ?`<span style="display:inline-block;background:var(--navy);color:#fff;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:800;letter-spacing:.05em">${esc(e.abbrev)}</span>`
                   :`<span style="color:var(--g200);font-size:11px;font-style:italic">—</span>`}
               </td>
-              <td style="font-size:13px;color:var(--g600)">${esc(e.contact||'—')}</td>
-              <td style="text-align:center;font-size:13px;color:var(--steel);font-weight:600">${esc(e.ext||'—')}</td>
-              <td style="font-size:12px"><a href="mailto:${esc(e.email||'')}" style="color:var(--steel);text-decoration:none">${esc(e.email||'—')}</a></td>
+              <td style="font-size:12px;color:var(--g600)">${esc(e.contact||'—')}</td>
+              <td style="text-align:center;font-size:12px;color:var(--steel);font-weight:600">${esc(e.ext||'—')}</td>
+              <td style="font-size:11px"><a href="mailto:${esc(e.email||'')}" style="color:var(--steel);text-decoration:none">${esc(e.email||'—')}</a></td>
             </tr>`).join('')}
         </tbody>
       </table>
