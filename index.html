@@ -3931,7 +3931,16 @@ function employeeModalHTML(emp){
         <div class="fg"><label class="lbl">Designation *</label><input class="inp" id="m-desig" value="${e.designation||''}" placeholder="Plant Manager"/></div>
       </div>
       <div class="g2">
+        <div class="fg">
+          <label class="lbl">Level <span style="font-weight:400;color:var(--g400);text-transform:none;letter-spacing:0">(Grade / Band)</span></label>
+          <select class="inp" id="m-level">
+            <option value="">— Select Level —</option>
+            ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n=>`<option value="${n}" ${parseInt(e.level||0)===n?'selected':''}>Level ${n}</option>`).join('')}
+          </select>
+        </div>
         <div class="fg"><label class="lbl">Employee Code</label><input class="inp" id="m-empcode" value="${e.empCode||''}" placeholder="EMP-001"/></div>
+      </div>
+      <div class="g2">
         <div class="fg"><label class="lbl">Department</label>
           ${S.departments.length>0
             ?`<select class="inp" id="m-dept">
@@ -4083,7 +4092,7 @@ function bulkModalHTML(){
         <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Step 1 — Download Template & Fill Data</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <button class="btn bo bsm" id="dl-template-btn">⬇ Download Excel Template (.xlsx)</button>
-          <span style="font-size:12px;color:var(--g400)">Fill the Excel sheet then upload below. Columns: <code style="background:rgba(0,0,0,.07);padding:1px 5px;border-radius:4px;font-size:11px">name, designation, emp_code, dept, email, contact, plant_name, reports_to_name, admin_reports_to, admin_reporting_type</code> — <em>reports_to_name / admin_reports_to accepts name or employee code · admin_reporting_type: administrative / functional / dotted-line / matrix</em></span>
+          <span style="font-size:12px;color:var(--g400)">Fill the Excel sheet then upload below. Columns: <code style="background:rgba(0,0,0,.07);padding:1px 5px;border-radius:4px;font-size:11px">name, designation, level, emp_code, dept, email, contact, plant_name, reports_to_name, admin_reports_to, admin_reporting_type</code> — <em>reports_to_name / admin_reports_to accepts name or employee code · admin_reporting_type: administrative / functional / dotted-line / matrix</em></span>
         </div>
         <div id="bulk-plants-hint" style="margin-top:10px;font-size:12px;color:var(--g400)">
           <span style="font-weight:600;color:var(--navy)">Plants in target structure:</span> <span id="bulk-plants-list" style="color:var(--steel)">loading…</span>
@@ -5268,7 +5277,7 @@ function bindModal(){
   // XLSX template download — includes gender column
   $('dl-template-btn')?.addEventListener('click',()=>{
     const ws=XLSX.utils.aoa_to_sheet([
-      ['name','designation','emp_code','dept','email','contact','gender','plant_name','reports_to_name (name or emp_code)','admin_reports_to (name or emp_code)','admin_reporting_type','working_location','abbrev','ext'],
+      ['name','designation','level','emp_code','dept','email','contact','gender','plant_name','reports_to_name (name or emp_code)','admin_reports_to (name or emp_code)','admin_reporting_type','working_location','abbrev','ext'],
       ['John Smith','Plant Manager','EMP-001','QMS','john@company.com','+91 98765 43210','male','Plant Alpha','','','',''],
       ['Jane Doe','Shift Supervisor','EMP-002','Production','jane@company.com','+91 98765 43211','female','Plant Alpha','John Smith','','','Plant Beta'],
       ['Ravi Kumar','QA Engineer','EMP-003','Quality','ravi@company.com','+91 98765 43212','male','Plant Beta','EMP-001','John Smith','administrative','Head Office'],
@@ -5562,7 +5571,9 @@ async function saveEmployee(){
   const isVacant=$('m-vacant')?.checked||false;
   const abbrev=($('m-abbrev')?.value||'').trim().toUpperCase();
   const ext=($('m-ext')?.value||'').trim();
-  const data={name,designation,empCode:empCode||'',dept:dept||'',email:email||'',contact:contact||'',gender,workingLocation,abbrev:abbrev||'',ext:ext||'',plantId,plant,parentId,adminParentId:adminParentId||null,adminReportingType:adminParentId?adminReportingType:null,photoURL,isVacant:isVacant||false};
+  const levelRaw=parseInt($('m-level')?.value||'0',10);
+  const level=levelRaw>=1?levelRaw:null;
+  const data={name,designation,empCode:empCode||'',dept:dept||'',email:email||'',contact:contact||'',gender,workingLocation,abbrev:abbrev||'',ext:ext||'',level:level||null,plantId,plant,parentId,adminParentId:adminParentId||null,adminReportingType:adminParentId?adminReportingType:null,photoURL,isVacant:isVacant||false};
   const existing=S.modal?.data;
   if(existing?.id){ await col('employees').doc(existing.id).update(data); toast('Employee updated','ok'); }
   else{ const newId=uid(); await col('employees').doc(newId).set({...data,createdAt:new Date().toISOString()}); toast('Employee added','ok'); sendEmpNotifEmail('add',{...data,id:newId}).catch(()=>{}); }
@@ -5925,6 +5936,7 @@ function parseBulkXLSX(file){
         const workingLocation=String(cells[col('working_location')]||'').trim();
         const abbrev=(String(cells[col('abbrev')]||'').trim()).toUpperCase();
         const ext=String(cells[col('ext')]||'').trim();
+        const levelBulk=parseInt(String(cells[col('level')]||'').trim(),10)||null;
         // Admin reporting columns
         const adminReportsToRaw = (() => {
           for(const alias of ['admin_reports_to','admin_reports_to_name','adminreportsto','admin_boss','dotted_line_manager']){
@@ -5971,7 +5983,7 @@ function parseBulkXLSX(file){
           if(fileDup) rowErrs.push(`Employee code "${empCode}" duplicated in this file (row: ${fileDup.name})`);
         }
 
-        _bulkRows.push({name,designation,empCode,dept,email,contact,gender,workingLocation,abbrev,ext,plantId,plant:resolvedPlant,reportsToName:reportsTo,reportsToDisplay:resolvedReportsTo,adminReportsToName:adminReportsToRaw,adminReportingType,valid:rowErrs.length===0,errors:rowErrs});
+        _bulkRows.push({name,designation,level:levelBulk||null,empCode,dept,email,contact,gender,workingLocation,abbrev,ext,plantId,plant:resolvedPlant,reportsToName:reportsTo,reportsToDisplay:resolvedReportsTo,adminReportsToName:adminReportsToRaw,adminReportingType,valid:rowErrs.length===0,errors:rowErrs});
       }
 
       if(_bulkRows.length===0){ showBulkErr('No valid data rows found in the Excel file.'); return; }
@@ -6090,7 +6102,7 @@ async function doBulkImport(){
         email:row.email||'', contact:row.contact||'',
         gender:row.gender||'',
         workingLocation:row.workingLocation||'',
-        abbrev:row.abbrev||'', ext:row.ext||'',
+        abbrev:row.abbrev||'', ext:row.ext||'', level:row.level||null,
         plantId:row.plantId||'', plant:row.plant||'',
         parentId:null, adminParentId:null, adminReportingType:null, photoURL:null,
         createdAt:new Date().toISOString()
